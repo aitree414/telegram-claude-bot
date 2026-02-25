@@ -1,0 +1,13 @@
+# Environment — contains secrets, never commit
+.env
+
+# Database
+conversations.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
