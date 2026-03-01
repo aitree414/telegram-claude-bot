@@ -101,6 +101,60 @@ def execute_tool(name: str, inputs: dict, authorized: bool = False) -> str:
     return f"未知工具：{name}"
 
 
+OPENAI_TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "讀取本地檔案內容，只允許 /Users/aitree414/ 目錄下的路徑。",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "絕對檔案路徑"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_directory",
+            "description": "列出目錄內容，只允許 /Users/aitree414/ 目錄下的路徑。",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "目錄路徑"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "執行安全的 bash 指令（ls, find, grep, cat, head, tail, wc, du, pwd）",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string", "description": "bash 指令"}},
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "建立或覆蓋本地檔案，只允許授權用戶使用，路徑限 /Users/aitree414/ 下。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "絕對檔案路徑"},
+                    "content": {"type": "string", "description": "檔案內容"},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+]
+
 TOOL_DEFINITIONS = [
     {
         "name": "read_file",

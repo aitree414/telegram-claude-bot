@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
-    anthropic_key = os.environ["ANTHROPIC_API_KEY"]
+    anthropic_key = os.environ["DEEPSEEK_API_KEY"]
     try:
         reminder_chat_id = int(os.environ.get("REMINDER_CHAT_ID", "0"))
     except ValueError:

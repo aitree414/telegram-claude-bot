@@ -390,7 +390,7 @@ async def poly_pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await update.message.chat.send_action("typing")
     await update.message.reply_text("正在分析 Polymarket 市場，請稍候（約 15 秒）...")
     mode = context.args[0].lower() if context.args else "ai"
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if mode == "quick":
         result = get_quick_picks(api_key)
     else:

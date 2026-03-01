@@ -5,13 +5,13 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
-import anthropic
+import openai
 
 logger = logging.getLogger(__name__)
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 TIMEOUT = 15
-MODEL = "claude-haiku-4-5-20251001"
+MODEL = "deepseek-chat"
 
 
 def _fetch_markets(limit: int = 100) -> list[dict]:
@@ -121,13 +121,13 @@ def get_ai_recommendations(api_key: str, top_n: int = 5) -> str:
    建議：資金的 [X]%"""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
+        client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+        response = client.chat.completions.create(
             model=MODEL,
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
-        analysis = response.content[0].text
+        analysis = response.choices[0].message.content
 
         header = (
             f"Polymarket 今日推薦 ({today})\n"
