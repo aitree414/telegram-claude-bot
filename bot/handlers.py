@@ -8,6 +8,7 @@ from .claude_client import ClaudeClient, SUPPORTED_IMAGE_TYPES
 from .alerts import AlertManager
 from .horse_race import format_daily_report
 from .polymarket import get_trending_markets, search_markets
+from .poly_analyzer import get_ai_recommendations, get_quick_picks
 from .stock import _normalize_symbol, get_stock_analysis, get_stock_info, scan_strong_stocks, get_current_price
 from .watchlist import WatchlistManager
 from .portfolio import PortfolioManager
@@ -380,6 +381,20 @@ async def poly_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         result = search_markets(query)
     else:
         result = get_trending_markets()
+    await update.message.reply_text(result)
+
+
+async def poly_pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """AI-powered Polymarket recommendations."""
+    import os
+    await update.message.chat.send_action("typing")
+    await update.message.reply_text("正在分析 Polymarket 市場，請稍候（約 15 秒）...")
+    mode = context.args[0].lower() if context.args else "ai"
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if mode == "quick":
+        result = get_quick_picks(api_key)
+    else:
+        result = get_ai_recommendations(api_key, top_n=5)
     await update.message.reply_text(result)
 
 

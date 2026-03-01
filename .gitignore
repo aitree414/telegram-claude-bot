@@ -9,5 +9,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# macOS
+# Claude Code session data
+.claude/
+
+# Misc
+.env.txt
 .DS_Store

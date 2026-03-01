@@ -6,10 +6,10 @@ from .memory import ConversationMemory
 from .project_loader import get_system_prompt
 from .tools import TOOL_DEFINITIONS, execute_tool
 
-MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 4096
-MAX_TOOL_ITERATIONS = 15
-TOOL_RESULT_MAX_LEN = 3000  # Truncate large tool results to avoid context overflow
+MODEL = "claude-haiku-4-5-20251001"   # 10x cheaper than Sonnet
+MAX_TOKENS = 2048                      # was 4096
+MAX_TOOL_ITERATIONS = 8               # was 15
+TOOL_RESULT_MAX_LEN = 2000            # was 3000
 SUPPORTED_IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"})
 
 
@@ -17,18 +17,19 @@ class ClaudeClient:
     def __init__(self, api_key: str, authorized_user_id: int = 0):
         self._client = anthropic.Anthropic(api_key=api_key)
         self._memory = ConversationMemory()
-        self._system = get_system_prompt()
         self._authorized_user_id = authorized_user_id
 
     def _agentic_loop(self, messages: list, authorized: bool = False) -> str:
         """Run agentic loop with tool use. Returns final text reply."""
+        # Reload system prompt on each call so MEMORY.md changes are picked up immediately
+        system = get_system_prompt()
         working_messages = list(messages)
 
         for _ in range(MAX_TOOL_ITERATIONS):
             response = self._client.messages.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                system=self._system,
+                system=system,
                 tools=TOOL_DEFINITIONS,
                 messages=working_messages,
             )
@@ -55,7 +56,7 @@ class ClaudeClient:
         response = self._client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=self._system,
+            system=system,
             messages=working_messages,
         )
         text_blocks = [b for b in response.content if b.type == "text"]

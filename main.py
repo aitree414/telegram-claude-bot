@@ -22,6 +22,7 @@ from bot.handlers import (
     help_command,
     history_command,
     poly_command,
+    poly_pick_command,
     portfolio_command,
     report_command,
     scan_command,
@@ -69,6 +70,7 @@ def main() -> None:
     app.add_handler(CommandHandler("today", today_command))
     app.add_handler(CommandHandler("files", files_command))
     app.add_handler(CommandHandler("poly", poly_command))
+    app.add_handler(CommandHandler("poly_pick", poly_pick_command))
     app.add_handler(CommandHandler("stock", stock_command))
     app.add_handler(CommandHandler("analysis", analysis_command))
     app.add_handler(CommandHandler("report", report_command))

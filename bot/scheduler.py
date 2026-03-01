@@ -1,10 +1,12 @@
 import logging
+import os
 from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .alerts import AlertManager
 from .stock import get_current_price, _normalize_symbol
+from .poly_analyzer import get_ai_recommendations
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,18 @@ def setup_scheduler(
             except Exception:
                 logger.exception(f"檢查提醒失敗：{alert}")
 
+    async def send_poly_picks() -> None:
+        if not chat_id:
+            return
+        try:
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            result = get_ai_recommendations(api_key, top_n=5)
+            await app.bot.send_message(chat_id=chat_id, text=result)
+        except Exception:
+            logger.exception("Polymarket 每日推薦發送失敗")
+
     if chat_id:
         scheduler.add_job(send_daily_reminder, "cron", hour=hour, minute=0)
+        scheduler.add_job(send_poly_picks, "cron", hour=9, minute=30)
     scheduler.add_job(check_price_alerts, "interval", minutes=5)
     return scheduler

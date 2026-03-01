@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 DB_PATH = Path.home() / "telegram-claude-bot" / "conversations.db"
-MAX_HISTORY = 100  # Max messages sent to Claude API per request
+MAX_HISTORY = 20   # was 100 — reduces token cost significantly
 
 
 class ConversationMemory:
