@@ -148,10 +148,11 @@ async def watch_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "追蹤清單是空的。\n\n用 /watch add <代碼> 加入股票。"
             )
             return
-        lines = ["追蹤清單：\n"]
+        lines = ["📋 自選觀察清單（夜間回測宇宙）：\n"]
         for i, s in enumerate(symbols, 1):
-            lines.append(f"{i}. {s}")
-        lines.append("\n/watch scan — 掃描全部\n/watch remove <代碼> — 移除")
+            name = wl.get_name(s)
+            lines.append(f"{i}. {s} {name}".rstrip())
+        lines.append("\n/watch add <代碼> [名稱] — 新增\n/watch remove <代碼> — 移除\n/watch scan — 技術掃描")
         await update.message.reply_text("\n".join(lines))
         return
 
@@ -159,13 +160,15 @@ async def watch_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if sub == "add":
         if len(args) < 2:
-            await update.message.reply_text("用法：/watch add <股票代碼>")
+            await update.message.reply_text("用法：/watch add <股票代碼> [股票名稱]")
             return
         symbol = _normalize_symbol(args[1])
-        if wl.add(symbol):
-            await update.message.reply_text(f"{symbol} 已加入追蹤清單。")
+        name = " ".join(args[2:]) if len(args) > 2 else ""
+        if wl.add(symbol, name):
+            label = f"{symbol} {name}" if name else symbol
+            await update.message.reply_text(f"✅ {label} 已加入自選清單，夜間回測將包含此股。")
         else:
-            await update.message.reply_text(f"{symbol} 已在追蹤清單中。")
+            await update.message.reply_text(f"{symbol} 已在自選清單中。")
 
     elif sub == "remove":
         if len(args) < 2:
@@ -173,24 +176,24 @@ async def watch_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
         symbol = _normalize_symbol(args[1])
         if wl.remove(symbol):
-            await update.message.reply_text(f"{symbol} 已從追蹤清單移除。")
+            await update.message.reply_text(f"🗑 {symbol} 已從自選清單移除。")
         else:
-            await update.message.reply_text(f"{symbol} 不在追蹤清單中。")
+            await update.message.reply_text(f"{symbol} 不在自選清單中。")
 
     elif sub == "scan":
         symbols = wl.list_symbols()
         if not symbols:
-            await update.message.reply_text("追蹤清單是空的，無法掃描。")
+            await update.message.reply_text("自選清單是空的，無法掃描。")
             return
-        await update.message.reply_text(f"掃描追蹤清單 ({len(symbols)} 支)，請稍候...")
+        await update.message.reply_text(f"掃描自選清單 ({len(symbols)} 支)，請稍候...")
         result = scan_strong_stocks(symbols=symbols, top_n=len(symbols), mode="technical")
         await update.message.reply_text(result)
 
     else:
         await update.message.reply_text(
             "用法：\n"
-            "/watch — 查看清單\n"
-            "/watch add <代碼> — 加入\n"
+            "/watch — 查看自選清單\n"
+            "/watch add <代碼> [名稱] — 加入（例：/watch add 2454 聯發科）\n"
             "/watch remove <代碼> — 移除\n"
             "/watch scan — 技術掃描全部"
         )

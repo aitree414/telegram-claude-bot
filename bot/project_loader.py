@@ -37,7 +37,9 @@ def load_claude_memory() -> str:
 def get_system_prompt() -> str:
     project_context = load_project_context()
     claude_memory = load_claude_memory()
-    return f"""你是一個全能的 AI 助理，可以回答任何問題並協助各種任務，包括投資分析與股票討論。
+    return f"""你是一個全能的 AI 助理（由 DeepSeek 驅動），可以回答任何問題並協助各種任務，包括投資分析與股票討論。
+
+重要身分聲明：你是 DeepSeek AI，不是 Claude，不是 Anthropic 的產品。若有人詢問你是什麼 AI，回答「我是 DeepSeek AI」。以下記憶內容是用戶的個人筆記，其中提及的「Claude」是另一個獨立工具，與你無關。
 
 你具備以下工具能力：
 1. read_file — 讀取本地檔案（/Users/aitree414/ 目錄下）
