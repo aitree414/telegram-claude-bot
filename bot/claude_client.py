@@ -23,9 +23,31 @@ class ClaudeClient:
         self._memory = ConversationMemory()
         self._authorized_user_id = authorized_user_id
 
+    def _sanitize_messages(self, messages: list) -> list:
+        """Convert Anthropic-format content blocks to plain text for DeepSeek."""
+        sanitized = []
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                text_parts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block["text"])
+                        elif block.get("type") in ("image", "document"):
+                            text_parts.append("[此訊息包含圖片/文件，DeepSeek 不支援，已略過]")
+                    elif isinstance(block, str):
+                        text_parts.append(block)
+                if text_parts:
+                    sanitized.append({**msg, "content": "\n".join(text_parts)})
+            else:
+                sanitized.append(msg)
+        return sanitized
+
     def _agentic_loop(self, messages: list, authorized: bool = False) -> str:
         system = get_system_prompt()
-        working_messages = [{"role": "system", "content": system}] + list(messages)
+        clean_messages = self._sanitize_messages(messages)
+        working_messages = [{"role": "system", "content": system}] + clean_messages
 
         for _ in range(MAX_TOOL_ITERATIONS):
             response = self._client.chat.completions.create(
