@@ -448,9 +448,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     claude: ClaudeClient = context.bot_data["claude"]
+
+    # Get largest photo
+    photo = update.message.photo[-1]
+
+    # Check file size if available
+    if photo.file_size and photo.file_size > FILE_SIZE_LIMIT:
+        await update.message.reply_text("圖片太大，請上傳小於 20MB 的檔案。")
+        return
+
     await update.message.chat.send_action("typing")
     try:
-        photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
         image_data = bytes(await file.download_as_bytearray())
         reply = claude.analyze_image(

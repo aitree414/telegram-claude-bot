@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -44,8 +45,15 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
-    anthropic_key = os.environ["DEEPSEEK_API_KEY"]
+    telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    anthropic_key = os.environ.get("DEEPSEEK_API_KEY")
+
+    if not telegram_token:
+        logger.error("TELEGRAM_BOT_TOKEN 環境變數未設定")
+        sys.exit(1)
+    if not anthropic_key:
+        logger.error("DEEPSEEK_API_KEY 環境變數未設定")
+        sys.exit(1)
     try:
         reminder_chat_id = int(os.environ.get("REMINDER_CHAT_ID", "0"))
     except ValueError:
@@ -88,14 +96,16 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    if reminder_chat_id or True:  # always start scheduler for price alerts
-        scheduler = setup_scheduler(app, reminder_chat_id, reminder_hour, claude, alert_manager)
+    # Always start scheduler for price alerts (daily reminders only if chat_id > 0)
+    scheduler = setup_scheduler(app, reminder_chat_id, reminder_hour, claude, alert_manager)
 
-        async def on_startup(application) -> None:
-            scheduler.start()
+    async def on_startup(application) -> None:
+        scheduler.start()
+        if reminder_chat_id:
             logger.info(f"每日提醒已設定：每天 {reminder_hour}:00 發送至 {reminder_chat_id}")
+        logger.info("價格提醒檢查已啟動（每5分鐘）")
 
-        app.post_init = on_startup
+    app.post_init = on_startup
 
     logger.info("Bot started!")
     app.run_polling()

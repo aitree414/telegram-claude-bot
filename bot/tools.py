@@ -10,8 +10,76 @@ ALLOWED_COMMANDS = frozenset({
 # Blocked dangerous commands regardless of authorization
 BLOCKED_COMMANDS = frozenset({
     "rm", "rmdir", "mkfs", "dd", "shutdown", "reboot", "halt", "poweroff",
-    "sudo", "su", "chmod", "chown", "kill", "killall"
+    "sudo", "su", "chmod", "chown", "kill", "killall", "mv", "cp", "scp",
+    "curl", "wget", "nc", "netcat", "telnet", "ssh", "python", "python3",
+    "node", "npm", "pip", "bash", "zsh", "sh", "csh", "ksh", "perl", "php",
+    "ruby", "java", "go", "rustc", "gcc", "g++", "clang", "make", "cmake",
+    "git", "svn", "hg", "tar", "zip", "unzip", "gzip", "bzip2", "xz",
+    "openssl", "ssh-keygen", "ssh-copy-id", "rsync", "ftp", "sftp", "lftp",
+    "mount", "umount", "fdisk", "parted", "mkfs.ext4", "mkfs.ntfs",
+    "useradd", "userdel", "usermod", "groupadd", "groupdel", "groupmod",
+    "passwd", "visudo", "crontab", "at", "batch", "service", "systemctl",
+    "iptables", "ufw", "firewall-cmd", "nft", "ip", "ifconfig", "route",
+    "arp", "netstat", "ss", "tcpdump", "wireshark", "nmap", "masscan",
+    "hydra", "metasploit", "aircrack-ng", "john", "hashcat", "sqlmap",
+    "nikto", "gobuster", "dirb", "wpscan", "nuclei", "zap", "burpsuite",
+    "ettercap", "dsniff", "etterlog", "etterfilter", "ettercap-ng",
+    "dsniff", "filesnarf", "mailsnarf", "msgsnarf", "urlsnarf", "webspy",
+    "sshmitm", "webmitm", "dnsspoof", "macof", "tcpkill", "tcpnice",
+    "tcpreplay", "tcptrace", "tcptraceroute", "traceroute", "tracepath",
+    "mtr", "ping", "ping6", "fping", "hping3", "nping", "thc-ssl-dos",
 })
+
+# Dangerous shell patterns that could lead to command injection
+DANGEROUS_PATTERNS = frozenset({
+    "$(", "`",  # command substitution
+    ";", "&&", "||", "&", "|",  # command separators and pipes
+    ">", ">>", "<", "<<",  # redirections
+    "\\", "\n", "\r",  # line continuations and newlines
+})
+
+# Extremely dangerous patterns that should be blocked even for authorized users
+EXTREME_DANGEROUS_PATTERNS = frozenset({
+    "$(", "`",  # command substitution
+    "\\", "\n", "\r",  # line continuations and newlines
+})
+
+def _sanitize_command(command: str, authorized: bool = False) -> tuple[bool, str]:
+    """
+    Check if command is safe to execute.
+    Returns (is_safe, error_message).
+    """
+    command = command.strip()
+    if not command:
+        return False, "空指令"
+
+    # Extract base command (first word)
+    parts = command.split()
+    if not parts:
+        return False, "無效指令"
+
+    base_cmd = parts[0]
+
+    # Check blocked commands
+    if base_cmd in BLOCKED_COMMANDS:
+        return False, f"危險指令 '{base_cmd}' 已封鎖。"
+
+    # Check extreme dangerous patterns for all users
+    for pattern in EXTREME_DANGEROUS_PATTERNS:
+        if pattern in command:
+            return False, f"指令包含危險模式 '{pattern}'，已拒絕。"
+
+    # For non-authorized users, only allow simple commands without shell features
+    if not authorized:
+        if base_cmd not in ALLOWED_COMMANDS:
+            return False, f"無權執行 '{base_cmd}'。"
+
+        # Check for all dangerous patterns for non-authorized users
+        for pattern in DANGEROUS_PATTERNS:
+            if pattern in command:
+                return False, f"指令包含危險模式 '{pattern}'，已拒絕。"
+
+    return True, ""
 
 
 def _check_path(path: str) -> Optional[str]:
@@ -57,15 +125,27 @@ def list_directory(path: str) -> str:
 
 
 def run_command(command: str, authorized: bool = False) -> str:
-    base_cmd = command.strip().split()[0] if command.strip() else ""
-    if base_cmd in BLOCKED_COMMANDS:
-        return f"危險指令 '{base_cmd}' 已封鎖。"
-    if not authorized and base_cmd not in ALLOWED_COMMANDS:
-        return f"無權執行 '{base_cmd}'。"
+    # Sanitize command first
+    is_safe, error = _sanitize_command(command, authorized)
+    if not is_safe:
+        return error
+
     try:
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, timeout=30
-        )
+        # For non-authorized users, use shell=False to prevent injection
+        # But we need to handle simple commands with arguments
+        if not authorized:
+            # Simple command splitting without shell features
+            import shlex
+            args = shlex.split(command)
+            result = subprocess.run(
+                args, shell=False, capture_output=True, text=True, timeout=30
+            )
+        else:
+            # Authorized users can use shell features but with sanitization
+            result = subprocess.run(
+                command, shell=True, capture_output=True, text=True, timeout=30
+            )
+
         output = result.stdout or result.stderr
         return output[:4000] if output else "（無輸出）"
     except subprocess.TimeoutExpired:

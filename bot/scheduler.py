@@ -70,7 +70,7 @@ def setup_scheduler(
         if not chat_id:
             return
         try:
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            api_key = os.environ.get("DEEPSEEK_API_KEY", "")
             result = get_ai_recommendations(api_key, top_n=5)
             await app.bot.send_message(chat_id=chat_id, text=result)
         except Exception:
