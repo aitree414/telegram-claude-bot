@@ -12,12 +12,98 @@ from .poly_analyzer import get_ai_recommendations, get_quick_picks
 from .stock import _normalize_symbol, get_stock_analysis, get_stock_info, scan_strong_stocks, get_current_price
 from .watchlist import WatchlistManager
 from .portfolio import PortfolioManager
+from .session_manager import get_session_manager, TaskType
+from .task_tracker import get_task_tracker, TaskType as TrackerTaskType, TaskStatus
 
 logger = logging.getLogger(__name__)
 
 FILE_SIZE_LIMIT = 20 * 1024 * 1024  # 20MB
 
 SCAN_MODES = {"technical", "value", "momentum", "pullback"}
+
+
+async def record_conversation_task(user_id: int, session_id: str) -> None:
+    """
+    Record a conversation as a task in the task tracker.
+
+    Args:
+        user_id: Telegram user ID
+        session_id: Session ID from session manager
+    """
+    try:
+        session_manager = get_session_manager()
+        task_tracker = get_task_tracker()
+
+        session = session_manager.get_session(session_id)
+        if not session:
+            logger.warning(f"Session {session_id} not found for task tracking")
+            return
+
+        # Convert TaskType enum from session manager to task tracker TaskType
+        task_type_map = {
+            TaskType.STOCK: TrackerTaskType.STOCK,
+            TaskType.PORTFOLIO: TrackerTaskType.PORTFOLIO,
+            TaskType.ALERTS: TrackerTaskType.ALERTS,
+            TaskType.WATCHLIST: TrackerTaskType.WATCHLIST,
+            TaskType.POLY: TrackerTaskType.POLY,
+            TaskType.CHAT: TrackerTaskType.CHAT,
+            TaskType.GENERAL: TrackerTaskType.GENERAL,
+        }
+
+        tracker_task_type = task_type_map.get(session.task_type, TrackerTaskType.OTHER)
+
+        # Convert messages to list of dicts
+        messages = []
+        for msg in session.messages:
+            messages.append({
+                "role": msg.role,
+                "content": msg.content,
+                "timestamp": msg.timestamp
+            })
+
+        # Prepare metadata
+        metadata = session.metadata.copy()
+        metadata["session_id"] = session_id
+
+        # Record task
+        task_tracker.record_task(
+            user_id=user_id,
+            task_type=tracker_task_type,
+            messages=messages,
+            metadata=metadata
+        )
+
+        logger.debug(f"Recorded task for session {session_id}, user {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to record task for session {session_id}: {e}", exc_info=True)
+
+
+async def record_task_from_text(user_id: int, text: str, reply: str = None) -> None:
+    """
+    Record a task from a text message, using session manager to get session.
+    If reply is provided, add it as assistant message.
+    """
+    try:
+        session_manager = get_session_manager()
+        session_id = session_manager.get_or_create_session(user_id, text)
+
+        # Get session
+        session = session_manager.get_session(session_id)
+        if not session:
+            logger.warning(f"Session {session_id} not found")
+            return
+
+        # Add user message if session has no messages
+        if not session.messages:
+            session_manager.add_message(session_id, "user", text)
+
+        # Add assistant reply if provided
+        if reply:
+            session_manager.add_message(session_id, "assistant", reply)
+
+        await record_conversation_task(user_id, session_id)
+    except Exception as e:
+        logger.error(f"Failed to record task from text for user {user_id}: {e}", exc_info=True)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -73,11 +159,15 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.chat.send_action("typing")
     today = datetime.now().strftime("%Y年%m月%d日")
     try:
-        reply = claude.chat(
+        # Use auto session for today command (task type will be determined from text)
+        reply, session_id = claude.chat_with_auto_session(
             update.effective_user.id,
             f"今天是 {today}，請列出今天的重要工作事項。",
         )
         await update.message.reply_text(reply)
+
+        # Record task after successful response
+        await record_conversation_task(update.effective_user.id, session_id)
     except Exception:
         logger.exception("today_command failed")
         await update.message.reply_text("發生錯誤，請稍後再試。")
@@ -87,11 +177,15 @@ async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     claude: ClaudeClient = context.bot_data["claude"]
     await update.message.chat.send_action("typing")
     try:
-        reply = claude.chat(
+        # Use auto session for files command
+        reply, session_id = claude.chat_with_auto_session(
             update.effective_user.id,
             "請列出 /Users/aitree414/Documents/08/HKHM 目錄的所有一級子目錄和檔案。",
         )
         await update.message.reply_text(reply)
+
+        # Record task after successful response
+        await record_conversation_task(update.effective_user.id, session_id)
     except Exception:
         logger.exception("files_command failed")
         await update.message.reply_text("發生錯誤，請稍後再試。")
@@ -103,7 +197,13 @@ async def analysis_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     await update.message.chat.send_action("typing")
     results = [get_stock_analysis(symbol) for symbol in context.args]
-    await update.message.reply_text("\n\n---\n\n".join(results))
+    reply_text = "\n\n---\n\n".join(results)
+    await update.message.reply_text(reply_text)
+    # Record task
+    try:
+        await record_task_from_text(update.effective_user.id, update.message.text, reply_text)
+    except Exception as e:
+        logger.error(f"Failed to record analysis command task: {e}")
 
 
 async def scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -123,6 +223,11 @@ async def scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(f"掃描中（{mode_label}模式），請稍候...")
     result = scan_strong_stocks(symbols=symbols, top_n=top_n, mode=mode)
     await update.message.reply_text(result)
+    # Record task
+    try:
+        await record_task_from_text(update.effective_user.id, update.message.text, result)
+    except Exception as e:
+        logger.error(f"Failed to record scan command task: {e}")
 
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -385,6 +490,11 @@ async def poly_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         result = get_trending_markets()
     await update.message.reply_text(result)
+    # Record task
+    try:
+        await record_task_from_text(update.effective_user.id, update.message.text, result)
+    except Exception as e:
+        logger.error(f"Failed to record poly command task: {e}")
 
 
 async def poly_pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -399,6 +509,11 @@ async def poly_pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     else:
         result = get_ai_recommendations(api_key, top_n=5)
     await update.message.reply_text(result)
+    # Record task
+    try:
+        await record_task_from_text(update.effective_user.id, update.message.text, result)
+    except Exception as e:
+        logger.error(f"Failed to record poly_pick command task: {e}")
 
 
 async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -413,20 +528,15 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     await update.message.chat.send_action("typing")
     results = [get_stock_info(symbol) for symbol in context.args]
-    await update.message.reply_text("\n\n---\n\n".join(results))
+    reply_text = "\n\n---\n\n".join(results)
+    await update.message.reply_text(reply_text)
+    # Record task
+    try:
+        await record_task_from_text(update.effective_user.id, update.message.text, reply_text)
+    except Exception as e:
+        logger.error(f"Failed to record stock command task: {e}")
 
 
-async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    claude: ClaudeClient = context.bot_data["claude"]
-    stats = claude._memory.get_stats(update.effective_user.id)
-    total = stats["total_messages"]
-    await update.message.reply_text(
-        f"對話記錄統計\n\n"
-        f"累計訊息：{total} 條\n"
-        f"儲存位置：本機 SQLite 資料庫\n"
-        f"重啟後不會消失\n\n"
-        f"用 /clear 可清除所有記錄"
-    )
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -439,8 +549,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     claude: ClaudeClient = context.bot_data["claude"]
     await update.message.chat.send_action("typing")
     try:
-        reply = claude.chat(update.effective_user.id, update.message.text)
+        # Use auto session for all text messages
+        reply, session_id = claude.chat_with_auto_session(update.effective_user.id, update.message.text)
         await update.message.reply_text(reply)
+
+        # Record task after successful response
+        await record_conversation_task(update.effective_user.id, session_id)
     except Exception:
         logger.exception("handle_text failed")
         await update.message.reply_text("發生錯誤，請稍後再試。")
@@ -461,13 +575,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         file = await context.bot.get_file(photo.file_id)
         image_data = bytes(await file.download_as_bytearray())
-        reply = claude.analyze_image(
+        reply, session_id = claude.analyze_image(
             update.effective_user.id,
             image_data,
             "image/jpeg",
             update.message.caption or "",
         )
         await update.message.reply_text(reply)
+
+        # Record task after successful response
+        await record_conversation_task(update.effective_user.id, session_id)
     except Exception:
         logger.exception("handle_photo failed")
         await update.message.reply_text("圖片分析失敗，請稍後再試。")
@@ -487,19 +604,139 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         file_data = bytes(await file.download_as_bytearray())
         mime_type = document.mime_type or ""
         caption = update.message.caption or ""
+        session_id = None
 
         if mime_type in SUPPORTED_IMAGE_TYPES:
-            reply = claude.analyze_image(
+            reply, session_id = claude.analyze_image(
                 update.effective_user.id, file_data, mime_type, caption
             )
         else:
-            reply = claude.analyze_file(
+            reply, session_id = claude.analyze_file(
                 update.effective_user.id,
                 file_data,
                 document.file_name or "file",
                 caption,
             )
         await update.message.reply_text(reply)
+
+        # Record task after successful response if we have a session_id
+        if session_id:
+            await record_conversation_task(update.effective_user.id, session_id)
     except Exception:
         logger.exception("handle_document failed")
         await update.message.reply_text("檔案分析失敗，請稍後再試。")
+
+
+async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start a new conversation session."""
+    claude: ClaudeClient = context.bot_data["claude"]
+    user_id = update.effective_user.id
+
+    task_type = None
+    if context.args:
+        task_type = context.args[0].lower()
+
+    session_id = claude.create_new_session(user_id, task_type)
+
+    await update.message.reply_text(
+        f"已建立新對話 session！\n"
+        f"Session ID: `{session_id}`\n\n"
+        f"用 /sessions 查看所有 session\n"
+        f"用 /history 查看當前 session 摘要",
+        parse_mode="Markdown"
+    )
+
+
+async def sessions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List all sessions for the user."""
+    claude: ClaudeClient = context.bot_data["claude"]
+    user_id = update.effective_user.id
+
+    include_archived = False
+    if context.args and context.args[0].lower() == "all":
+        include_archived = True
+
+    sessions = claude.get_user_sessions(user_id, include_archived)
+
+    if not sessions:
+        await update.message.reply_text("你目前沒有任何 session。")
+        return
+
+    lines = ["📁 你的對話 session：\n"]
+    for i, session in enumerate(sessions[:10], 1):  # Limit to 10 sessions
+        task_type = session.get("task_type", "general")
+        created = datetime.fromtimestamp(session.get("created_at", 0)).strftime("%m/%d")
+        last_active = datetime.fromtimestamp(session.get("last_activity", 0)).strftime("%m/%d %H:%M")
+        msg_count = len(session.get("messages", []))
+
+        lines.append(
+            f"{i}. `{session['session_id'][:20]}...`\n"
+            f"   📝 {task_type} | 📅 {created} | 💬 {msg_count} 條 | ⏰ {last_active}"
+        )
+
+    if len(sessions) > 10:
+        lines.append(f"\n...還有 {len(sessions) - 10} 個 session")
+
+    lines.append("\n用 /new 建立新 session")
+    lines.append("用 /history <session_id> 查看詳細記錄")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show history of a session."""
+    claude: ClaudeClient = context.bot_data["claude"]
+    user_id = update.effective_user.id
+
+    if context.args:
+        session_id = context.args[0]
+    else:
+        # Get current session based on last message
+        # For simplicity, we'll use the most recent session
+        sessions = claude.get_user_sessions(user_id)
+        if not sessions:
+            await update.message.reply_text("你目前沒有任何 session。")
+            return
+        session_id = sessions[0]["session_id"]
+
+    summary = claude.get_session_summary(session_id)
+
+    if "error" in summary:
+        await update.message.reply_text(f"找不到 session: {session_id}")
+        return
+
+    # Get session details
+    session = claude._session_manager.get_session(session_id)
+    if not session:
+        await update.message.reply_text("無法讀取 session 詳細資料。")
+        return
+
+    lines = [
+        f"📋 Session 摘要：",
+        f"ID: `{session_id}`",
+        f"類型: {summary['task_type']}",
+        f"建立時間: {summary['created_at']}",
+        f"最後活動: {summary['last_activity']}",
+        f"訊息數量: {summary['message_count']}",
+    ]
+
+    if session.metadata:
+        lines.append("\n📊 元數據:")
+        for key, value in session.metadata.items():
+            if key not in ["user_id", "date"]:
+                lines.append(f"  {key}: {value}")
+
+    # Show recent messages (last 5)
+    recent_messages = session.get_recent_messages(max_messages=5)
+    if recent_messages:
+        lines.append("\n💬 最近訊息:")
+        for i, msg in enumerate(recent_messages[-3:], 1):  # Last 3 messages
+            role_icon = "👤" if msg["role"] == "user" else "🤖"
+            content_preview = str(msg["content"])[:50]
+            if len(str(msg["content"])) > 50:
+                content_preview += "..."
+            lines.append(f"  {role_icon} {content_preview}")
+
+    lines.append(f"\n📁 完整記錄保存在: data/sessions/{session_id}.json")
+
+    await update.message.reply_text("\n".join(lines))

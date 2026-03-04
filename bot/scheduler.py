@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .alerts import AlertManager
 from .stock import get_current_price, _normalize_symbol
 from .poly_analyzer import get_ai_recommendations
+from .session_manager import get_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +77,19 @@ def setup_scheduler(
         except Exception:
             logger.exception("Polymarket 每日推薦發送失敗")
 
+    async def archive_old_sessions() -> None:
+        """Archive sessions older than 30 days."""
+        try:
+            session_manager = get_session_manager()
+            archived_count = session_manager.archive_old_sessions()
+            if archived_count > 0:
+                logger.info(f"已歸檔 {archived_count} 個舊 session")
+        except Exception:
+            logger.exception("Session 歸檔失敗")
+
     if chat_id:
         scheduler.add_job(send_daily_reminder, "cron", hour=hour, minute=0)
         scheduler.add_job(send_poly_picks, "cron", hour=9, minute=30)
     scheduler.add_job(check_price_alerts, "interval", minutes=5)
+    scheduler.add_job(archive_old_sessions, "cron", hour=3, minute=0)  # Daily at 3 AM
     return scheduler

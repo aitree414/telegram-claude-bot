@@ -1,8 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Tuple
+from requests.exceptions import ConnectionError, Timeout
 
 import yfinance as yf
 import pandas as pd
+
+from .retry import retry, retry_with_exponential_backoff
 
 
 TAIWAN_WATCHLIST = [
@@ -41,8 +44,11 @@ def _compute_indicators(hist: pd.DataFrame) -> dict:
     delta = close.diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
-    rs = gain / loss
-    rsi = (100 - 100 / (1 + rs)).iloc[-1]
+    # 避免除零錯誤
+    rs = gain / loss.replace(0, float("nan"))
+    rsi_series = 100 - 100 / (1 + rs)
+    rsi_series = rsi_series.fillna(50)  # 當rs為NaN時設為中性值50
+    rsi = rsi_series.iloc[-1]
 
     ema12 = close.ewm(span=12, adjust=False).mean()
     ema26 = close.ewm(span=26, adjust=False).mean()
@@ -73,7 +79,11 @@ def _compute_indicators(hist: pd.DataFrame) -> dict:
 
     vol_20_avg = volume.rolling(20).mean().iloc[-1]
     vol_today = volume.iloc[-1]
-    vol_ratio = vol_today / vol_20_avg if vol_20_avg and vol_20_avg != 0 else 1.0
+    # 檢查是否為NaN或零
+    if pd.notna(vol_20_avg) and vol_20_avg != 0:
+        vol_ratio = vol_today / vol_20_avg
+    else:
+        vol_ratio = 1.0
 
     return {
         "ma5": ma5,
@@ -219,16 +229,44 @@ def _compute_fundamental_score(fund: dict) -> Tuple[int, list]:
 def get_current_price(symbol: str) -> Optional[float]:
     """Return current price as float, or None if unavailable."""
     symbol = _normalize_symbol(symbol)
-    try:
+
+    # Define retryable exceptions (network errors)
+    retryable_exceptions = (ConnectionError, Timeout)
+
+    # Define the function that will be retried
+    def fetch_price():
         info = yf.Ticker(symbol).info
         return info.get("currentPrice") or info.get("regularMarketPrice")
+
+    # Try with retry for network errors
+    try:
+        return retry_with_exponential_backoff(
+            fetch_price,
+            max_retries=2,
+            initial_delay=0.5,
+            max_delay=5.0,
+            backoff_factor=2.0,
+            retryable_exceptions=retryable_exceptions,
+        )
+    except retryable_exceptions:
+        # Network error after all retries
+        return None
+    except (KeyError, ValueError, TypeError):
+        # Data parsing error or invalid symbol
+        return None
     except Exception:
+        # Other unexpected errors
         return None
 
 
 def get_stock_info(symbol: str) -> str:
     symbol = _normalize_symbol(symbol)
-    try:
+
+    # Define retryable exceptions (network errors)
+    retryable_exceptions = (ConnectionError, Timeout)
+
+    def fetch_stock_data():
+        """Fetch stock data with retry for network errors."""
         ticker = yf.Ticker(symbol)
         info = ticker.info
 
@@ -242,34 +280,72 @@ def get_stock_info(symbol: str) -> str:
         market_cap = info.get("marketCap")
 
         if not current:
-            return (
-                f"找不到 {symbol} 的股票資料，請確認代碼是否正確。\n\n"
-                "港股範例：0700 或 0700.HK\n美股範例：AAPL、TSLA"
-            )
+            raise ValueError(f"No price data for {symbol}")
 
-        change = current - prev_close if prev_close else 0
-        change_pct = (change / prev_close * 100) if prev_close else 0
-        arrow = "▲" if change >= 0 else "▼"
+        return {
+            "name": name,
+            "currency": currency,
+            "current": current,
+            "prev_close": prev_close,
+            "volume": volume,
+            "high_52": high_52,
+            "low_52": low_52,
+            "market_cap": market_cap,
+        }
 
-        lines = [
-            f"{name} ({symbol})",
-            "",
-            f"現價：{currency} {current:.3f}",
-            f"漲跌：{arrow} {abs(change):.3f} ({abs(change_pct):.2f}%)",
-        ]
-        if prev_close:
-            lines.append(f"昨收：{currency} {prev_close:.3f}")
-        if high_52 and low_52:
-            lines.append(f"52週：{low_52:.3f} - {high_52:.3f}")
-        if volume:
-            lines.append(f"成交量：{volume:,}")
-        if market_cap:
-            lines.append(f"市值：{_format_market_cap(market_cap, currency)}")
-
-        return "\n".join(lines)
-
+    try:
+        # Try with retry for network errors
+        data = retry_with_exponential_backoff(
+            fetch_stock_data,
+            max_retries=2,
+            initial_delay=0.5,
+            max_delay=5.0,
+            backoff_factor=2.0,
+            retryable_exceptions=retryable_exceptions,
+        )
+    except retryable_exceptions as e:
+        return f"查詢 {symbol} 時發生網路錯誤：{e}，請檢查網路連線後再試。"
+    except ValueError as e:
+        # No price data
+        return (
+            f"找不到 {symbol} 的股票資料，請確認代碼是否正確。\n\n"
+            "港股範例：0700 或 0700.HK\n美股範例：AAPL、TSLA"
+        )
+    except (KeyError, ValueError, TypeError) as e:
+        return f"查詢 {symbol} 時發生數據解析錯誤：{e}，請確認股票代碼是否有效。"
     except Exception as e:
-        return f"查詢 {symbol} 時發生錯誤：{e}"
+        return f"查詢 {symbol} 時發生未預期錯誤：{e}"
+
+    # Format the response
+    name = data["name"]
+    currency = data["currency"]
+    current = data["current"]
+    prev_close = data["prev_close"]
+    volume = data["volume"]
+    high_52 = data["high_52"]
+    low_52 = data["low_52"]
+    market_cap = data["market_cap"]
+
+    change = current - prev_close if prev_close else 0
+    change_pct = (change / prev_close * 100) if prev_close else 0
+    arrow = "▲" if change >= 0 else "▼"
+
+    lines = [
+        f"{name} ({symbol})",
+        "",
+        f"現價：{currency} {current:.3f}",
+        f"漲跌：{arrow} {abs(change):.3f} ({abs(change_pct):.2f}%)",
+    ]
+    if prev_close:
+        lines.append(f"昨收：{currency} {prev_close:.3f}")
+    if high_52 and low_52:
+        lines.append(f"52週：{low_52:.3f} - {high_52:.3f}")
+    if volume:
+        lines.append(f"成交量：{volume:,}")
+    if market_cap:
+        lines.append(f"市值：{_format_market_cap(market_cap, currency)}")
+
+    return "\n".join(lines)
 
 
 def get_stock_analysis(symbol: str) -> str:
@@ -352,14 +428,23 @@ def get_stock_analysis(symbol: str) -> str:
 
         return "\n".join(lines)
 
+    except (ConnectionError, Timeout) as e:
+        return f"分析 {symbol} 時發生網路錯誤：{e}，請檢查網路連線後再試。"
+    except (KeyError, ValueError, TypeError) as e:
+        return f"分析 {symbol} 時發生數據解析錯誤：{e}，可能該股票數據不完整。"
     except Exception as e:
-        return f"分析 {symbol} 時發生錯誤：{e}"
+        return f"分析 {symbol} 時發生未預期錯誤：{e}"
 
 
 def _scan_single(symbol: str) -> Optional[dict]:
     """Fetch and score a single stock for scan. Returns dict or None on failure."""
     normalized = _normalize_symbol(symbol)
-    try:
+
+    # Define retryable exceptions (network errors)
+    retryable_exceptions = (ConnectionError, Timeout)
+
+    def fetch_stock_data():
+        """Fetch stock data with retry for network errors."""
         ticker = yf.Ticker(normalized)
         info = ticker.info
         name = info.get("longName") or info.get("shortName") or normalized
@@ -368,11 +453,11 @@ def _scan_single(symbol: str) -> Optional[dict]:
         currency = info.get("currency", "")
 
         if not current:
-            return None
+            raise ValueError("No price data")
 
         hist = ticker.history(period="60d")
         if hist.empty or len(hist) < 20:
-            return None
+            raise ValueError("Insufficient historical data")
 
         ind = _compute_indicators(hist)
         tech_score, tech_triggers = _compute_score(ind, current, info)
@@ -393,7 +478,28 @@ def _scan_single(symbol: str) -> Optional[dict]:
             "ind": ind,
             "fund": fund,
         }
+
+    try:
+        # Try with retry for network errors
+        return retry_with_exponential_backoff(
+            fetch_stock_data,
+            max_retries=1,  # One retry (total 2 attempts)
+            initial_delay=0.5,
+            max_delay=2.0,
+            backoff_factor=2.0,
+            retryable_exceptions=retryable_exceptions,
+        )
+    except retryable_exceptions:
+        # Network error after all retries
+        return None
+    except ValueError:
+        # No price data or insufficient history
+        return None
+    except (KeyError, ValueError, TypeError):
+        # Data error or invalid symbol
+        return None
     except Exception:
+        # Other unexpected errors
         return None
 
 
@@ -445,45 +551,53 @@ def scan_strong_stocks(
     mode: str = "technical",
 ) -> str:
     """Parallel scan of stocks. mode: technical / value / momentum / pullback."""
-    if symbols:
-        target = [_normalize_symbol(s) for s in symbols]
-    else:
-        target = [_normalize_symbol(s) for s in TAIWAN_WATCHLIST]
-
-    results = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(_scan_single, s): s for s in target}
-        for future in as_completed(futures):
-            result = future.result()
-            if result:
-                results.append(result)
-
-    filtered = [r for r in results if _matches_mode(r, mode)]
-
-    if not filtered:
-        return f"掃描完成，{mode} 模式下無符合條件的股票。"
-
-    filtered.sort(key=lambda r: _sort_key(r, mode), reverse=True)
-    top = filtered[:top_n]
-
-    mode_label = {"technical": "技術", "value": "價值", "momentum": "動能", "pullback": "拉回買點"}.get(mode, mode)
-    lines = [f"強勢股掃描 [{mode_label}模式] Top {top_n}", ""]
-
-    for i, r in enumerate(top, 1):
-        arrow = "▲" if r["change_pct"] >= 0 else "▼"
-        if mode == "value":
-            score_str = f"基本面{r['fund_score']}/100"
-            triggers = r["fund_triggers"][:3]
+    try:
+        if symbols:
+            target = [_normalize_symbol(s) for s in symbols]
         else:
-            score_str = f"技術{r['tech_score']}/8"
-            triggers = r["tech_triggers"][:3]
-        trigger_str = "、".join(triggers) if triggers else "無"
-        lines.append(
-            f"{i}. {r['name']} ({r['symbol']})\n"
-            f"   {score_str}  現價：{r['currency']} {r['current']:.3f}  {arrow}{abs(r['change_pct']):.2f}%\n"
-            f"   [{trigger_str}]"
-        )
+            target = [_normalize_symbol(s) for s in TAIWAN_WATCHLIST]
 
-    lines.append("")
-    lines.append("(僅供參考，非投資建議)")
-    return "\n".join(lines)
+        results = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(_scan_single, s): s for s in target}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    results.append(result)
+
+        filtered = [r for r in results if _matches_mode(r, mode)]
+
+        if not filtered:
+            return f"掃描完成，{mode} 模式下無符合條件的股票。"
+
+        filtered.sort(key=lambda r: _sort_key(r, mode), reverse=True)
+        top = filtered[:top_n]
+
+        mode_label = {"technical": "技術", "value": "價值", "momentum": "動能", "pullback": "拉回買點"}.get(mode, mode)
+        lines = [f"強勢股掃描 [{mode_label}模式] Top {top_n}", ""]
+
+        for i, r in enumerate(top, 1):
+            arrow = "▲" if r["change_pct"] >= 0 else "▼"
+            if mode == "value":
+                score_str = f"基本面{r['fund_score']}/100"
+                triggers = r["fund_triggers"][:3]
+            else:
+                score_str = f"技術{r['tech_score']}/8"
+                triggers = r["tech_triggers"][:3]
+            trigger_str = "、".join(triggers) if triggers else "無"
+            lines.append(
+                f"{i}. {r['name']} ({r['symbol']})\n"
+                f"   {score_str}  現價：{r['currency']} {r['current']:.3f}  {arrow}{abs(r['change_pct']):.2f}%\n"
+                f"   [{trigger_str}]"
+            )
+
+        lines.append("")
+        lines.append("(僅供參考，非投資建議)")
+        return "\n".join(lines)
+
+    except (ConnectionError, Timeout) as e:
+        return f"掃描股票時發生網路錯誤：{e}，請檢查網路連線後再試。"
+    except (KeyError, ValueError, TypeError) as e:
+        return f"掃描股票時發生數據錯誤：{e}，請確認輸入的股票代碼是否有效。"
+    except Exception as e:
+        return f"掃描股票時發生未預期錯誤：{e}"

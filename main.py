@@ -22,6 +22,8 @@ from bot.handlers import (
     handle_text,
     help_command,
     history_command,
+    new_command,
+    sessions_command,
     poly_command,
     poly_pick_command,
     portfolio_command,
@@ -92,6 +94,8 @@ def main() -> None:
     app.add_handler(CommandHandler("delalert", delalert_command))
     app.add_handler(CommandHandler("history", history_command))
     app.add_handler(CommandHandler("clear", clear_command))
+    app.add_handler(CommandHandler("new", new_command))
+    app.add_handler(CommandHandler("sessions", sessions_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))

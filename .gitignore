@@ -1,17 +1,64 @@
 # Environment — contains secrets, never commit
 .env
+.env.local
+.env.*.local
 
 # Database
 conversations.db
+conversations.db-*
+*.db
+*.db-*
 
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
+*.pyc
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+venv_poly/
+.venv/
+ENV/
+
+# Logs
+*.log
+*.log.*
+bot.log*
+logs/
+
+# Backup files
+*.backup
+*.old
+*_backup
+backup/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Claude Code session data
 .claude/
 
 # Misc
 .env.txt
-.DS_Store
+data/
+web-apps/
+start_bot.sh
+fix_*.sh
+demo_*.py
+test_*.py
+fixed_*.py
