@@ -12,13 +12,15 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
+from . import constants
+
 # Constants
 SESSIONS_DIR = Path(__file__).parent.parent / "data" / "sessions"
 ARCHIVE_DIR = SESSIONS_DIR / "archive"
-DEFAULT_MAX_MESSAGES = 15
-DEFAULT_MAX_TOKENS = 50000
-ARCHIVE_DAYS = 30
-GENERAL_SESSION_TIMEOUT = 1800  # 30 minutes in seconds
+DEFAULT_MAX_MESSAGES = constants.DEFAULT_MAX_HISTORY_MESSAGES
+DEFAULT_MAX_TOKENS = constants.MAX_CONTEXT_WINDOW
+ARCHIVE_DAYS = constants.ARCHIVE_DAYS
+GENERAL_SESSION_TIMEOUT = constants.GENERAL_SESSION_TIMEOUT
 
 # Ensure directories exist
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)

@@ -12,23 +12,15 @@ from .project_loader import get_system_prompt
 from .tools import OPENAI_TOOL_DEFINITIONS, execute_tool
 from .session_manager import get_session_manager, TaskType
 from .retry import retry, async_retry, retry_with_exponential_backoff
+from . import constants
 
 logger = logging.getLogger(__name__)
 
-MODEL = "deepseek-chat"
-MAX_TOKENS = 4096
-MAX_TOOL_ITERATIONS = 8
-TOOL_RESULT_MAX_LEN = 2000
-SUPPORTED_IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"})
-MAX_RETRIES_CONTEXT_EXCEEDED = 3
-DEFAULT_MAX_HISTORY_MESSAGES = 15
-MAX_CONTEXT_TOKENS = 50000  # Conservative limit for DeepSeek
-
-# API retry settings
-MAX_API_RETRIES = 3
-INITIAL_RETRY_DELAY = 1.0  # seconds
-MAX_RETRY_DELAY = 10.0  # seconds
-RETRY_BACKOFF_FACTOR = 2.0
+# API retry settings (kept here for backward compatibility)
+MAX_API_RETRIES = constants.MAX_API_RETRIES
+INITIAL_RETRY_DELAY = constants.INITIAL_RETRY_DELAY
+MAX_RETRY_DELAY = constants.MAX_RETRY_DELAY
+RETRY_BACKOFF_FACTOR = constants.RETRY_BACKOFF_FACTOR
 
 # Retryable error types
 RETRYABLE_ERRORS = (
@@ -92,7 +84,7 @@ class ClaudeClient:
                         total += chinese_chars * 2 + english_words * 1.5
         return int(total)
 
-    def _adjust_messages_for_context(self, messages: list, max_tokens: int = MAX_CONTEXT_TOKENS) -> list:
+    def _adjust_messages_for_context(self, messages: list, max_tokens: int = constants.MAX_CONTEXT_WINDOW) -> list:
         """Reduce messages if token count exceeds limit."""
         estimated = self._estimate_tokens(messages)
         if estimated <= max_tokens:
@@ -122,7 +114,7 @@ class ClaudeClient:
         else:
             return messages[-1:] if messages else []
 
-    def _call_deepseek_api(self, messages: list, tools=None, max_tokens: int = MAX_TOKENS):
+    def _call_deepseek_api(self, messages: list, tools=None, max_tokens: int = constants.API_MAX_TOKENS):
         """Call DeepSeek API with automatic retry for transient errors.
 
         Args:
@@ -162,7 +154,7 @@ class ClaudeClient:
         @retry_decorator
         def _api_call():
             return self._client.chat.completions.create(
-                model=MODEL,
+                model=constants.DEEPSEEK_MODEL,
                 max_tokens=max_tokens,
                 tools=tools,
                 messages=messages,
@@ -187,7 +179,7 @@ class ClaudeClient:
         clean_messages = self._sanitize_messages(messages)
         working_messages = [{"role": "system", "content": system}] + clean_messages
 
-        for iteration in range(MAX_TOOL_ITERATIONS):
+        for iteration in range(constants.MAX_TOOL_ITERATIONS):
             # Adjust messages if needed before API call
             adjusted_messages = self._adjust_messages_for_context(working_messages)
 
@@ -200,8 +192,8 @@ class ClaudeClient:
             except openai.BadRequestError as e:
                 if "context_length_exceeded" in str(e).lower():
                     logger.warning(f"Context length exceeded, retrying with reduced messages")
-                    # Reduce messages and retry (up to MAX_RETRIES_CONTEXT_EXCEEDED)
-                    for retry in range(MAX_RETRIES_CONTEXT_EXCEEDED):
+                    # Reduce messages and retry (up to constants.MAX_RETRIES_CONTEXT_EXCEEDED)
+                    for retry in range(constants.MAX_RETRIES_CONTEXT_EXCEEDED):
                         # Reduce messages by half each retry, preserving system message
                         reduction_factor = 2 ** (retry + 1)  # 2, 4, 8
                         reduced_count = max(1, len(working_messages) // reduction_factor)
@@ -228,7 +220,7 @@ class ClaudeClient:
                             # Success - continue with the response
                             break
                         except openai.BadRequestError as retry_e:
-                            if "context_length_exceeded" in str(retry_e).lower() and retry < MAX_RETRIES_CONTEXT_EXCEEDED - 1:
+                            if "context_length_exceeded" in str(retry_e).lower() and retry < constants.MAX_RETRIES_CONTEXT_EXCEEDED - 1:
                                 continue
                             else:
                                 raise retry_e
@@ -278,8 +270,8 @@ class ClaudeClient:
                     logger.error(f"Tool {tc.function.name} execution failed: {e}")
                     result = f"工具執行錯誤：{e}"
 
-                if len(result) > TOOL_RESULT_MAX_LEN:
-                    result = result[:TOOL_RESULT_MAX_LEN] + "\n...(輸出已截斷)"
+                if len(result) > constants.TOOL_RESULT_MAX_LEN:
+                    result = result[:constants.TOOL_RESULT_MAX_LEN] + "\n...(輸出已截斷)"
 
                 working_messages.append({
                     "role": "tool",
@@ -311,8 +303,8 @@ class ClaudeClient:
             self._session_manager.add_message(session_id, "user", text)
             messages = self._session_manager.get_messages_for_api(
                 session_id,
-                max_messages=DEFAULT_MAX_HISTORY_MESSAGES,
-                max_tokens=MAX_CONTEXT_TOKENS
+                max_messages=constants.DEFAULT_MAX_HISTORY_MESSAGES,
+                max_tokens=constants.MAX_CONTEXT_WINDOW
             )
             reply = self._agentic_loop(messages, authorized=authorized, session_id=session_id)
             self._session_manager.add_message(session_id, "assistant", reply)

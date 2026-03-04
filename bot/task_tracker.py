@@ -12,6 +12,8 @@ from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
 
+from . import constants
+
 # Constants
 TASKS_FILE = Path(__file__).parent.parent / "data" / "tasks.json"
 WEB_TASKS_FILE = Path(__file__).parent.parent / "web-apps" / "data" / "tasks.json"
@@ -19,10 +21,10 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Auto-repair settings
-MAX_RETRIES = 3
-RETRY_DELAY = 0.1  # seconds
+MAX_RETRIES = constants.MAX_RETRIES
+RETRY_DELAY = constants.RETRY_DELAY
 BACKUP_FILES = True
-MAX_BACKUPS = 5
+MAX_BACKUPS = constants.MAX_BACKUPS
 
 class TaskStatus(Enum):
     """Status of a task."""
