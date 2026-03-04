@@ -17,6 +17,7 @@ from .retry import retry, retry_with_exponential_backoff
 GAMMA_API = "https://gamma-api.polymarket.com"
 TIMEOUT = 15
 MODEL = "deepseek-chat"
+MAX_TOKENS = 1500  # For Polymarket analysis requests
 
 
 def _fetch_markets(limit: int = 100, max_retries: int = 3) -> list[dict]:
@@ -200,7 +201,7 @@ def get_ai_recommendations(api_key: str, top_n: int = 5) -> str:
         client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
         response = client.chat.completions.create(
             model=MODEL,
-            max_tokens=1500,
+            max_tokens=MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
         analysis = response.choices[0].message.content
