@@ -187,7 +187,7 @@ class ClaudeClient:
                 response = self._call_deepseek_api(
                     messages=adjusted_messages,
                     tools=OPENAI_TOOL_DEFINITIONS,
-                    max_tokens=MAX_TOKENS,
+                    max_tokens=constants.API_MAX_TOKENS,
                 )
             except openai.BadRequestError as e:
                 if "context_length_exceeded" in str(e).lower():
@@ -215,7 +215,7 @@ class ClaudeClient:
                             response = self._call_deepseek_api(
                                 messages=reduced_messages,
                                 tools=OPENAI_TOOL_DEFINITIONS,
-                                max_tokens=MAX_TOKENS,
+                                max_tokens=constants.API_MAX_TOKENS,
                             )
                             # Success - continue with the response
                             break
@@ -284,7 +284,7 @@ class ClaudeClient:
             response = self._call_deepseek_api(
                 messages=adjusted_messages,
                 tools=None,
-                max_tokens=MAX_TOKENS,
+                max_tokens=constants.API_MAX_TOKENS,
             )
             return response.choices[0].message.content or "任務已執行完畢。"
         except Exception as e:

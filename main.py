@@ -36,6 +36,8 @@ from bot.handlers import (
     watch_command,
 )
 from bot.scheduler import setup_scheduler
+from bot.repair import get_repair_manager
+from bot.config import get_config
 
 load_dotenv()
 
@@ -47,33 +49,33 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    anthropic_key = os.environ.get("DEEPSEEK_API_KEY")
-
-    if not telegram_token:
-        logger.error("TELEGRAM_BOT_TOKEN 環境變數未設定")
-        sys.exit(1)
-    if not anthropic_key:
-        logger.error("DEEPSEEK_API_KEY 環境變數未設定")
-        sys.exit(1)
+    # Load configuration
     try:
-        reminder_chat_id = int(os.environ.get("REMINDER_CHAT_ID", "0"))
-    except ValueError:
-        reminder_chat_id = 0
-        logger.warning("REMINDER_CHAT_ID 格式錯誤，每日提醒已停用")
-    reminder_hour = int(os.environ.get("REMINDER_HOUR", "8"))
+        config = get_config()
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
 
-    authorized_user_id = int(os.environ.get("AUTHORIZED_USER_ID", "0"))
-    claude = ClaudeClient(api_key=anthropic_key, authorized_user_id=authorized_user_id)
+    # Ensure required directories exist
+    if not config.ensure_directories():
+        logger.warning("Failed to create some directories, continuing anyway")
+
+    # Create components
+    claude = ClaudeClient(api_key=config.deepseek_api_key, authorized_user_id=config.authorized_user_id)
     alert_manager = AlertManager()
     watchlist_manager = WatchlistManager()
     portfolio_manager = PortfolioManager()
 
-    app = Application.builder().token(telegram_token).build()
+    app = Application.builder().token(config.telegram_bot_token).build()
     app.bot_data["claude"] = claude
     app.bot_data["alert_manager"] = alert_manager
     app.bot_data["watchlist_manager"] = watchlist_manager
     app.bot_data["portfolio_manager"] = portfolio_manager
+
+    # Run automatic repair checks on startup
+    repair_manager = get_repair_manager()
+    if not repair_manager.run_startup_checks():
+        logger.warning("Some startup checks failed, but continuing operation")
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -101,12 +103,12 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     # Always start scheduler for price alerts (daily reminders only if chat_id > 0)
-    scheduler = setup_scheduler(app, reminder_chat_id, reminder_hour, claude, alert_manager)
+    scheduler = setup_scheduler(app, config.reminder_chat_id, config.reminder_hour, claude, alert_manager)
 
     async def on_startup(application) -> None:
         scheduler.start()
-        if reminder_chat_id:
-            logger.info(f"每日提醒已設定：每天 {reminder_hour}:00 發送至 {reminder_chat_id}")
+        if config.reminder_chat_id:
+            logger.info(f"每日提醒已設定：每天 {config.reminder_hour}:00 發送至 {config.reminder_chat_id}")
         logger.info("價格提醒檢查已啟動（每5分鐘）")
 
     app.post_init = on_startup
