@@ -4,7 +4,8 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from .claude_client import ClaudeClient, SUPPORTED_IMAGE_TYPES
+from .claude_client import ClaudeClient
+from .constants import SUPPORTED_IMAGE_TYPES
 from .alerts import AlertManager
 from .horse_race import format_daily_report
 from .polymarket import get_trending_markets, search_markets
