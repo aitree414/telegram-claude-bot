@@ -6,6 +6,7 @@ import yfinance as yf
 import pandas as pd
 
 from .retry import retry, retry_with_exponential_backoff
+from quant.data.manager import get_data_manager
 
 
 TAIWAN_WATCHLIST = [
@@ -361,7 +362,10 @@ def get_stock_analysis(symbol: str) -> str:
         if not current:
             return f"找不到 {symbol} 的資料。"
 
-        hist = ticker.history(period="60d")
+        hist = get_data_manager().get_historical_data(symbol, period="60d", interval="1d")
+        if hist is None:
+            # Fallback to direct yfinance download
+            hist = ticker.history(period="60d")
         if hist.empty or len(hist) < 20:
             return f"{symbol}：歷史數據不足，無法計算技術指標。"
 
@@ -455,7 +459,10 @@ def _scan_single(symbol: str) -> Optional[dict]:
         if not current:
             raise ValueError("No price data")
 
-        hist = ticker.history(period="60d")
+        hist = get_data_manager().get_historical_data(normalized, period="60d", interval="1d")
+        if hist is None:
+            # Fallback to direct yfinance download
+            hist = ticker.history(period="60d")
         if hist.empty or len(hist) < 20:
             raise ValueError("Insufficient historical data")
 
