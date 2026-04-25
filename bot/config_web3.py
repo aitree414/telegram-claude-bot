@@ -110,6 +110,49 @@ class Web3Config:
         self.debug_mode = os.environ.get('DEBUG_MODE', 'false').lower() == 'true'
         self.log_all_transactions = os.environ.get('LOG_ALL_TRANSACTIONS', 'false').lower() == 'true'
 
+        # Network mode (mainnet or testnet)
+        self.network_mode = os.environ.get('NETWORK_MODE', 'mainnet').lower()
+
+        # Apply testnet overrides if in testnet mode
+        self._apply_testnet_overrides()
+
+    def _apply_testnet_overrides(self) -> None:
+        """Apply testnet-specific configuration overrides.
+
+        When NETWORK_MODE=testnet, this method:
+        - Adds Sepolia RPC URL and chain ID
+        - Overrides DEX configs with Sepolia testnet addresses
+        - Lowers trading limits for testnet safety
+        """
+        if self.network_mode != 'testnet':
+            return
+
+        logger.info("Applying testnet configuration overrides")
+
+        # Add Sepolia RPC URL
+        sepolia_rpc = os.environ.get('SEPOLIA_RPC_URL')
+        if sepolia_rpc:
+            self.rpc_urls['sepolia'] = sepolia_rpc
+
+        # Add Sepolia chain ID
+        self.chain_ids['sepolia'] = 11155111
+
+        # Override DEX configs for Sepolia testnet
+        self.dex_configs['uniswap_v2'] = {
+            'router': os.environ.get(
+                'TEST_UNISWAP_V2_ROUTER',
+                '0xC532a74256D338Db9Ee4E7e38E9046eE5fE6a8a3'
+            ),
+            'factory': os.environ.get(
+                'TEST_UNISWAP_V2_FACTORY',
+                '0x7E0987E8b5C0E2D1F2B0c7D5F8F1E3A1B5C8D9E0'
+            ),
+        }
+
+        # Lower trading limits for testnet safety
+        self.max_trade_eth = float(os.environ.get('TEST_MAX_TRADE_ETH', '0.01'))
+        self.min_trade_eth = float(os.environ.get('TEST_MIN_TRADE_ETH', '0.0001'))
+
     def _load_blacklist(self) -> Dict[str, Any]:
         """Load blacklist from JSON file."""
         try:

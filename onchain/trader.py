@@ -535,6 +535,7 @@ class TradeExecutor:
             Chain.ARBITRUM: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
             Chain.POLYGON: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
             Chain.AVALANCHE: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+            Chain.SEPOLIA: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
         }
         return weth_addresses.get(self.chain)
 

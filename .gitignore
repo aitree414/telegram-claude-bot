@@ -53,6 +53,9 @@ Thumbs.db
 # Claude Code session data
 .claude/
 
+# Compiled Solidity artifacts
+contracts/compiled/
+
 # Misc
 .env.txt
 data/

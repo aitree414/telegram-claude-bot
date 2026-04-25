@@ -61,6 +61,7 @@ class Chain(str, Enum):
     ARBITRUM = "arbitrum"
     POLYGON = "polygon"
     AVALANCHE = "avalanche"
+    SEPOLIA = "sepolia"
 
 
 # Database models
