@@ -11,6 +11,7 @@ from typing import Optional, Any
 from pathlib import Path
 
 from . import constants
+from .config_web3 import get_web3_config
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ class Config:
     def __init__(self):
         self._load_from_env()
         self._validate()
+        self.web3_config = get_web3_config()
 
     def _load_from_env(self) -> None:
         """Load configuration from environment variables."""
@@ -57,6 +59,12 @@ class Config:
         # Web app paths (if applicable)
         self.web_apps_data_dir = Path(__file__).parent.parent / "web-apps" / "data"
 
+        # Onchain data paths
+        self.onchain_data_dir = self.data_dir / "onchain"
+        self.onchain_cache_dir = self.onchain_data_dir / "cache"
+        self.onchain_logs_dir = self.onchain_data_dir / "logs"
+        self.onchain_blacklist_dir = self.onchain_data_dir / "blacklist"
+
     def _validate(self) -> None:
         """Validate required configuration."""
         errors = []
@@ -78,6 +86,8 @@ class Config:
 
     def get_required_config(self) -> dict:
         """Get required configuration for external validation."""
+        web3_summary = self.web3_config.get_config_summary() if hasattr(self, 'web3_config') else {}
+
         return {
             "telegram_bot_token": bool(self.telegram_bot_token),
             "deepseek_api_key": bool(self.deepseek_api_key),
@@ -85,6 +95,7 @@ class Config:
             "reminder_chat_id": self.reminder_chat_id,
             "reminder_hour": self.reminder_hour,
             "daily_reminder_enabled": self.is_daily_reminder_enabled(),
+            "web3_config": web3_summary,
         }
 
     def ensure_directories(self) -> bool:
@@ -94,6 +105,13 @@ class Config:
             self.sessions_dir.mkdir(parents=True, exist_ok=True)
             self.archive_dir.mkdir(parents=True, exist_ok=True)
             self.web_apps_data_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create onchain directories
+            self.onchain_data_dir.mkdir(parents=True, exist_ok=True)
+            self.onchain_cache_dir.mkdir(parents=True, exist_ok=True)
+            self.onchain_logs_dir.mkdir(parents=True, exist_ok=True)
+            self.onchain_blacklist_dir.mkdir(parents=True, exist_ok=True)
+
             return True
         except Exception as e:
             logger.error(f"Failed to create directories: {e}")
