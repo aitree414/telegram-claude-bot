@@ -1,0 +1,342 @@
+:root {
+    --primary: #6f42c1;
+    --primary-dark: #55309a;
+    --primary-light: #e8dff5;
+    --gradient-start: #6f42c1;
+    --gradient-end: #9058d6;
+    --bg-light: #f8f7fc;
+    --card-shadow: 0 2px 12px rgba(111, 66, 193, 0.1);
+}
+
+body {
+    background: var(--bg-light);
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+}
+
+.navbar {
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end)) !important;
+    box-shadow: 0 2px 15px rgba(111, 66, 193, 0.3);
+}
+
+.navbar-brand {
+    font-weight: 700;
+    font-size: 1.3rem;
+    letter-spacing: 0.5px;
+}
+
+.navbar .btn-outline-light:hover {
+    background: rgba(255,255,255,0.2);
+    border-color: rgba(255,255,255,0.5);
+}
+
+.navbar .btn-outline-light i {
+    font-size: 1.1rem;
+}
+
+/* Cards */
+.card {
+    border: none;
+    border-radius: 16px;
+    box-shadow: var(--card-shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(111, 66, 193, 0.15);
+}
+
+.project-card {
+    cursor: pointer;
+}
+
+.project-card .card-header {
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    color: white;
+    border-radius: 16px 16px 0 0 !important;
+    padding: 1.25rem;
+    border: none;
+}
+
+.project-card .card-header h5 {
+    font-weight: 600;
+    margin: 0;
+}
+
+.stat-card {
+    border-radius: 12px;
+    padding: 1.25rem;
+    height: 100%;
+}
+
+.stat-card .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.stat-card .stat-label {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-bottom: 0.25rem;
+}
+
+.stat-card .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.stat-income { background: #d4edda; }
+.stat-income .stat-icon { background: #28a745; color: white; }
+.stat-income .stat-value { color: #155724; }
+
+.stat-expense { background: #f8d7da; }
+.stat-expense .stat-icon { background: #dc3545; color: white; }
+.stat-expense .stat-value { color: #721c24; }
+
+.stat-profit { background: #cce5ff; }
+.stat-profit .stat-icon { background: var(--primary); color: white; }
+.stat-profit .stat-value { color: #004085; }
+
+.stat-pending-income { background: #fff3cd; }
+.stat-pending-income .stat-icon { background: #ffc107; color: #856404; }
+.stat-pending-income .stat-value { color: #856404; }
+
+.stat-pending-expense { background: #e2e3e5; }
+.stat-pending-expense .stat-icon { background: #6c757d; color: white; }
+.stat-pending-expense .stat-value { color: #383d41; }
+
+/* Table */
+.table-container {
+    overflow-x: auto;
+}
+
+.table th {
+    border-top: none;
+    color: #6c757d;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.badge-income {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-expense {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.badge-paid {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* Action buttons */
+.btn-action {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.15s;
+}
+
+.btn-action:hover {
+    transform: scale(1.1);
+}
+
+/* Modal */
+.modal-content {
+    border: none;
+    border-radius: 16px;
+}
+
+.modal-header {
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    color: white;
+    border-radius: 16px 16px 0 0;
+}
+
+.modal-header .btn-close {
+    filter: brightness(0) invert(1);
+}
+
+/* Status badge */
+.status-badge {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.status-active { background: #28a745; }
+.status-archived { background: #6c757d; }
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #6c757d;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+/* Loading */
+.loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 4rem;
+}
+
+/* Animations */
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Page header */
+.page-header {
+    margin-bottom: 1.5rem;
+}
+
+.page-header h4 {
+    font-weight: 700;
+    color: #2d2d2d;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .stat-card .stat-value {
+        font-size: 1.2rem;
+    }
+    .project-card .card-header {
+        padding: 1rem;
+    }
+}
+
+/* Year tabs */
+.year-tabs {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.year-tab {
+    background: white;
+    border: 2px solid #e0d6f2;
+    border-radius: 12px;
+    padding: 0.75rem 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    min-width: 100px;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.year-tab:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    transform: translateY(-2px);
+}
+
+.year-tab.active {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: white;
+}
+
+.year-tab.active .year-tab-count {
+    color: rgba(255,255,255,0.8);
+}
+
+.year-tab-year {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.year-tab-count {
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+/* Year summary card */
+.year-summary-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: var(--card-shadow);
+}
+
+.summary-item {
+    text-align: center;
+    padding: 1rem;
+    border-radius: 12px;
+}
+
+.summary-income { background: #d4edda; }
+.summary-expense { background: #f8d7da; }
+.summary-profit { background: #cce5ff; }
+
+.summary-label {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-bottom: 0.25rem;
+}
+
+.summary-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.summary-income .summary-value { color: #155724; }
+.summary-expense .summary-value { color: #721c24; }
+.summary-profit .summary-value { color: #004085; }
+
+/* Navbar nav links */
+.navbar-nav .nav-link {
+    color: rgba(255,255,255,0.85) !important;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    margin: 0 0.15rem;
+    transition: background 0.2s;
+}
+
+.navbar-nav .nav-link:hover {
+    background: rgba(255,255,255,0.15);
+    color: white !important;
+}
