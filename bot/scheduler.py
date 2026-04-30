@@ -5,7 +5,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .alerts import AlertManager
-from .stock import get_current_price, _normalize_symbol
+from .stock import get_current_price, _normalize_symbol, TAIWAN_WATCHLIST
 from .poly_analyzer import get_ai_recommendations
 from .session_manager import get_session_manager
 
@@ -87,9 +87,33 @@ def setup_scheduler(
         except Exception:
             logger.exception("Session 歸檔失敗")
 
+    # Auto-trader cycle (closes the analysis→execution loop)
+    async def auto_trader_cycle() -> None:
+        auto_trader = app.bot_data.get("auto_trader")
+        if not auto_trader or not auto_trader.is_enabled:
+            return
+        try:
+            symbols = [_normalize_symbol(s) for s in TAIWAN_WATCHLIST]
+            actions = await auto_trader.run_cycle(symbols)
+            if actions:
+                logger.info(f"Auto-trader: {len(actions)} action(s)")
+                if chat_id:
+                    lines = ["🤖 自動交易執行：\n"]
+                    for a in actions:
+                        lines.append(f"  {a['action']} {a['symbol']} @ {a.get('price','?')}")
+                    await app.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+        except Exception:
+            logger.exception("Auto-trader cycle failed")
+
     if chat_id:
         scheduler.add_job(send_daily_reminder, "cron", hour=hour, minute=0)
         scheduler.add_job(send_poly_picks, "cron", hour=9, minute=30)
     scheduler.add_job(check_price_alerts, "interval", minutes=5)
     scheduler.add_job(archive_old_sessions, "cron", hour=3, minute=0)  # Daily at 3 AM
+
+    # Auto-trader (interval from config, default 60 min)
+    from manager.auto_trader import AutoTraderConfig
+    _ac = AutoTraderConfig()
+    scheduler.add_job(auto_trader_cycle, "interval", minutes=_ac.interval_minutes)
+
     return scheduler

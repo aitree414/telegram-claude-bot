@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -13,8 +14,13 @@ from bot.handlers import (
     alert_command,
     alerts_command,
     analysis_command,
+    autotrade_command,
     buy_command,
+    buysim_command,
     clear_command,
+    consolidated_command,
+    deep_command,
+    deepscan_command,
     delalert_command,
     files_command,
     handle_document,
@@ -28,16 +34,25 @@ from bot.handlers import (
     poly_pick_command,
     portfolio_command,
     report_command,
+    risk_command,
     scan_command,
     sell_command,
+    sellsim_command,
+    simportfolio_command,
     start,
     stock_command,
     today_command,
+    tokenmap_command,
     watch_command,
 )
 from bot.scheduler import setup_scheduler
 from bot.repair import get_repair_manager
+from onchain.orchestrator import TradeOrchestrator
 from bot.config import get_config
+from manager.portfolio_manager_agent import PortfolioManagerAgent
+from manager.portfolio_risk import PortfolioRiskManager
+from manager.auto_trader import AutoTrader
+from manager.real_trader_bridge import RealTradeBridge
 
 load_dotenv()
 
@@ -65,12 +80,31 @@ def main() -> None:
     alert_manager = AlertManager()
     watchlist_manager = WatchlistManager()
     portfolio_manager = PortfolioManager()
+    orchestrator = TradeOrchestrator()
 
     app = Application.builder().token(config.telegram_bot_token).build()
     app.bot_data["claude"] = claude
     app.bot_data["alert_manager"] = alert_manager
     app.bot_data["watchlist_manager"] = watchlist_manager
     app.bot_data["portfolio_manager"] = portfolio_manager
+    app.bot_data["orchestrator"] = orchestrator
+
+    # New components (Priority 2 & 4)
+    portfolio_manager_agent = PortfolioManagerAgent()
+    portfolio_risk_manager = PortfolioRiskManager()
+    sim_portfolio = PortfolioManager(simulation=True)
+    app.bot_data["portfolio_manager_agent"] = portfolio_manager_agent
+    app.bot_data["portfolio_risk_manager"] = portfolio_risk_manager
+    app.bot_data["sim_portfolio"] = sim_portfolio
+
+    # Auto-trader (Priority 6 — closes the analysis→execution loop)
+    real_trade_bridge = RealTradeBridge(orchestrator=orchestrator)
+    auto_trader = AutoTrader(
+        sim_portfolio=sim_portfolio,
+        risk_manager=portfolio_risk_manager,
+        real_trade_bridge=real_trade_bridge,
+    )
+    app.bot_data["auto_trader"] = auto_trader
 
     # Run automatic repair checks on startup
     repair_manager = get_repair_manager()
@@ -98,6 +132,24 @@ def main() -> None:
     app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(CommandHandler("new", new_command))
     app.add_handler(CommandHandler("sessions", sessions_command))
+    app.add_handler(CommandHandler("autotrade", autotrade_command))
+    app.add_handler(CommandHandler("tokenmap", tokenmap_command))
+
+    # New commands (Priority 1 — Deep Persona Analysis)
+    app.add_handler(CommandHandler("deep", deep_command))
+    app.add_handler(CommandHandler("deepscan", deepscan_command))
+
+    # New command (Priority 2 — Consolidated Portfolio)
+    app.add_handler(CommandHandler("consolidated", consolidated_command))
+
+    # New command (Priority 4 — Risk Status)
+    app.add_handler(CommandHandler("risk", risk_command))
+
+    # New commands (Priority 5 — Simulated Trading)
+    app.add_handler(CommandHandler("buysim", buysim_command))
+    app.add_handler(CommandHandler("sellsim", sellsim_command))
+    app.add_handler(CommandHandler("simportfolio", simportfolio_command))
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
@@ -111,7 +163,21 @@ def main() -> None:
             logger.info(f"每日提醒已設定：每天 {config.reminder_hour}:00 發送至 {config.reminder_chat_id}")
         logger.info("價格提醒檢查已啟動（每5分鐘）")
 
+        # Start auto-trade orchestrator in background (read-only monitoring)
+        asyncio.create_task(
+            orchestrator.start_continuous_processing(),
+            name="orchestrator"
+        )
+        logger.info("自動交易監控引擎已啟動（唯讀模式，BSC 鏈）")
+        if auto_trader.is_enabled:
+            logger.info(f"🤖 自動交易引擎已啟用（間隔：{auto_trader.config.interval_minutes} 分鐘）")
+
+    async def on_shutdown(application) -> None:
+        await orchestrator.stop_continuous_processing()
+        logger.info("自動交易監控引擎已停止")
+
     app.post_init = on_startup
+    app.post_shutdown = on_shutdown
 
     logger.info("Bot started!")
     app.run_polling()

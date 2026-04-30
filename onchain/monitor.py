@@ -15,8 +15,19 @@ from dataclasses import dataclass
 from enum import Enum
 
 from web3 import Web3
-from web3.providers import HTTPProvider, WebsocketProvider
-from web3.middleware import geth_poa_middleware
+try:
+    from web3.providers import HTTPProvider, WebsocketProvider
+except ImportError:
+    from web3.providers import HTTPProvider
+    # WebsocketProvider was removed in web3.py v7+ — use V2 variant if needed
+    try:
+        from web3.providers import WebsocketProviderV2 as WebsocketProvider
+    except ImportError:
+        WebsocketProvider = None
+try:
+    from web3.middleware import geth_poa_middleware
+except ImportError:
+    geth_poa_middleware = None  # web3.py v7+ auto-detects PoA chains
 
 from .database import OnchainEvent, EventType, Chain, get_onchain_database
 from bot.config_web3 import get_web3_config
@@ -202,9 +213,12 @@ class BlockchainMonitor:
 
         web3 = Web3(provider)
 
-        # Add POA middleware for chains like BSC, Polygon
-        if self.config.chain in [Chain.BSC, Chain.POLYGON, Chain.AVALANCHE]:
-            web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+        # Add POA middleware for chains like BSC, Polygon (not needed in web3.py v7+)
+        if geth_poa_middleware and self.config.chain in [Chain.BSC, Chain.POLYGON, Chain.AVALANCHE]:
+            try:
+                web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            except TypeError:
+                pass
 
         # Test connection
         if not web3.is_connected():

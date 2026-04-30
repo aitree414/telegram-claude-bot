@@ -8,20 +8,26 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 PORTFOLIO_FILE = Path.home() / "telegram-claude-bot" / "portfolio.json"
+SIM_PORTFOLIO_FILE = Path.home() / "telegram-claude-bot" / "portfolio_sim.json"
 
 
 class PortfolioManager:
-    def __init__(self) -> None:
+    def __init__(self, simulation: bool = False) -> None:
         self._trades: list[dict[str, Any]] = []
         self._next_id = 1
         self._lock = threading.RLock()
+        self._simulation = simulation
         self._load()
+
+    def _file_path(self) -> Path:
+        return SIM_PORTFOLIO_FILE if self._simulation else PORTFOLIO_FILE
 
     def _load(self) -> None:
         with self._lock:
-            if PORTFOLIO_FILE.exists():
+            fp = self._file_path()
+            if fp.exists():
                 try:
-                    data = json.loads(PORTFOLIO_FILE.read_text())
+                    data = json.loads(fp.read_text())
                     self._trades = data.get("trades", [])
                     self._next_id = data.get("next_id", 1)
                 except Exception:
@@ -30,8 +36,9 @@ class PortfolioManager:
     def _save(self) -> None:
         with self._lock:
             try:
-                PORTFOLIO_FILE.parent.mkdir(parents=True, exist_ok=True)
-                PORTFOLIO_FILE.write_text(
+                fp = self._file_path()
+                fp.parent.mkdir(parents=True, exist_ok=True)
+                fp.write_text(
                     json.dumps(
                         {"trades": self._trades, "next_id": self._next_id},
                         ensure_ascii=False,

@@ -426,6 +426,39 @@ class NightlyBacktestEngine:
 
         logger.info(f"原始數據已保存到: {json_file}")
 
+    def _save_best_strategy(self, results: Dict[str, Any]) -> None:
+        """回測結果回饋到即時交易系統 (Priority 3)."""
+        try:
+            best = results.get("best_strategy")
+            if not best:
+                logger.warning("無最佳策略可供回饋")
+                return
+
+            strategy_results = results.get("strategy_results", {}).get(best, {})
+            avg = strategy_results.get("avg_metrics", {})
+
+            payload = {
+                "timestamp": datetime.now().isoformat(),
+                "best_strategy": best,
+                "metrics": {
+                    "win_rate": avg.get("win_rate", 0),
+                    "sharpe_ratio": avg.get("sharpe_ratio", 0),
+                    "max_drawdown": avg.get("max_drawdown", 0),
+                    "total_return": avg.get("total_return", 0),
+                },
+                "symbols": results.get("symbols", []),
+                "success_rate": strategy_results.get("success_rate", 0),
+            }
+
+            output_path = project_root / "data" / "best_strategy.json"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+
+            logger.info(f"✅ 最佳策略 '{best}' 已回饋到 data/best_strategy.json")
+        except Exception as e:
+            logger.error(f"儲存最佳策略失敗: {e}")
+
     def run(self) -> None:
         """運行完整的夜間回測流程。"""
         logger.info("=" * 60)
@@ -454,6 +487,9 @@ class NightlyBacktestEngine:
             print("夜間回測完成！")
             print("=" * 60)
             print(report[:2000] + "..." if len(report) > 2000 else report)
+
+            # 6. 儲存最佳策略供即時交易使用 (Priority 3 — Backtest-to-Live)
+            self._save_best_strategy(results)
 
             logger.info("夜間回測流程完成")
 

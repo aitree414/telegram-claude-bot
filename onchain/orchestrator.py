@@ -123,9 +123,12 @@ class TradeOrchestrator:
 
             web3 = Web3(Web3.HTTPProvider(rpc_url))
 
-            # Add POA middleware for non-ETH chains
+            # Add POA middleware for non-ETH chains (not needed in web3.py v7+)
             if chain in [Chain.BSC, Chain.POLYGON, Chain.AVALANCHE]:
-                web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                try:
+                    web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                except TypeError:
+                    pass  # web3.py v7+ auto-detects PoA chains
 
             if not web3.is_connected():
                 logger.error(f"Failed to connect to {chain} RPC")

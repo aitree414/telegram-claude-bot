@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 
 from telegram import Update
@@ -15,6 +16,11 @@ from .watchlist import WatchlistManager
 from .portfolio import PortfolioManager
 from .session_manager import get_session_manager, TaskType
 from .task_tracker import get_task_tracker, TaskType as TrackerTaskType, TaskStatus
+from analysis.stock_analyzer import analyze_stock
+from analysis.persona_agents import PERSONA_NAMES
+from manager.portfolio_manager_agent import PortfolioManagerAgent
+from manager.portfolio_risk import PortfolioRiskManager
+from manager.real_trader_bridge import TokenMapper
 
 logger = logging.getLogger(__name__)
 
@@ -115,29 +121,56 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• 讀取你電腦上的本地檔案\n"
         "• 傳送圖片或 PDF 讓我分析\n"
         "• 執行文件搜尋指令\n\n"
-        "指令：\n"
-        "/today - 今日工作提醒\n"
-        "/files - 查看專案文件目錄\n"
-        "/poly - Polymarket 熱門市場\n"
-        "/poly <關鍵字> - 搜尋預測市場\n"
+        "📈 進階分析：\n"
+        "/deep 2330 - 5個AI分析師多維度評估\n"
+        "/deepscan - AI深層掃描觀察清單\n"
+        "/consolidated - 整合投資日報\n"
+        "\n"
+        "📊 傳統分析：\n"
         "/stock 2330 - 查詢股價\n"
         "/analysis 0700 - 技術+基本面分析\n"
-        "/report - 今日 Horse Race 報告\n"
-        "/report 2026-02-25 - 指定日期報告\n"
-        "/scan - 掃描強勢台股 Top5\n"
+        "/scan - 掃描強勢台股\n"
         "/scan value - 價值股模式\n"
         "/scan momentum - 動能股模式\n"
         "/scan pullback - 拉回買點模式\n"
+        "\n"
+        "📋 管理：\n"
         "/watch - 查看追蹤清單\n"
         "/watch add 2330 - 加入追蹤\n"
-        "/watch remove 2330 - 移除追蹤\n"
+        "/watch remove 2330 - 移除\n"
         "/watch scan - 掃描追蹤清單\n"
+        "/alert 0700 above 400 - 價格提醒\n"
+        "/alerts - 查看提醒\n"
+        "/risk - 風控狀態\n"
+        "\n"
+        "💰 交易記錄：\n"
         "/buy 2330 100 900 - 記錄買入\n"
         "/sell 2330 50 950 - 記錄賣出\n"
-        "/portfolio - 查看持倉損益\n"
-        "/alert 0700 above 400 - 設定價格提醒\n"
-        "/alerts - 查看提醒清單\n"
-        "/clear - 清除對話記憶\n"
+        "/portfolio - 持倉損益\n"
+        "/buysim AAPL 10 200 - 模擬買入\n"
+        "/sellsim AAPL 5 210 - 模擬賣出\n"
+        "/simportfolio - 模擬持倉\n"
+        "\n"
+        "🔮 預測市場：\n"
+        "/poly - Polymarket 熱門市場\n"
+        "/poly <關鍵字> - 搜尋\n"
+        "/poly_pick - AI 推薦\n"
+        "\n"
+        "🤖 自動化：\n"
+        "/autotrade - 自動交易狀態\n"
+        "/autotrade on - 啟用自動交易\n"
+        "/autotrade off - 停用\n"
+        "/autotrade run - 立即掃描一次\n"
+        "/autotrade real on - 啟用鏈上真實交易\n"
+        "/tokenmap - 管理代幣映射\n"
+        "/consolidated - 整合投資日報\n"
+        "\n"
+        "⚙️ 系統：\n"
+        "/today - 工作提醒\n"
+        "/report - Horse Race 報告\n"
+        "/new - 新對話\n"
+        "/sessions - 查看對話\n"
+        "/clear - 清除記憶\n"
         "/help - 顯示幫助"
     )
 
@@ -153,6 +186,83 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/files - 查看專案文件目錄\n"
         "/clear - 清除對話記憶"
     )
+
+
+async def autotrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    auto_trader = context.bot_data.get("auto_trader")
+    if not auto_trader:
+        await update.message.reply_text("自動交易系統未初始化。")
+        return
+
+    args = context.args or []
+
+    # Sub-commands
+    if args and args[0].lower() == "on":
+        auto_trader.enable()
+        await update.message.reply_text("🟢 自動交易已啟用")
+        return
+
+    if args and args[0].lower() == "off":
+        auto_trader.disable()
+        await update.message.reply_text("🔴 自動交易已停用")
+        return
+
+    # Real mode sub-command
+    if args and args[0].lower() == "real":
+        if len(args) > 1 and args[1].lower() == "on":
+            auto_trader.enable_real_mode()
+            await update.message.reply_text(
+                "⛓️ 鏈上真實交易模式已啟用\n\n"
+                "注意：需先設定代幣映射 (/tokenmap add)，否則交易會被跳過。\n"
+                "當前網路模式：測試鏈 (可透過 .env 的 NETWORK_MODE 切換)"
+            )
+            return
+        if len(args) > 1 and args[1].lower() == "off":
+            auto_trader.disable_real_mode()
+            await update.message.reply_text("⛓️ 鏈上真實交易模式已停用，僅保留模擬交易")
+            return
+        await update.message.reply_text(
+            "用法：\n"
+            "/autotrade real on — 啟用鏈上真實交易\n"
+            "/autotrade real off — 停用鏈上真實交易"
+        )
+        return
+
+    if args and args[0].lower() == "run":
+        await update.message.reply_text("🔍 正在執行自動掃描，請稍候...")
+        from .stock import TAIWAN_WATCHLIST
+        symbols = [_normalize_symbol(s) for s in TAIWAN_WATCHLIST]
+        actions = await auto_trader.run_cycle(symbols)
+        if not actions:
+            await update.message.reply_text("✅ 掃描完成，無符合條件的交易。")
+        else:
+            lines = ["🤖 自動交易執行結果：\n"]
+            for a in actions:
+                lines.append(
+                    f"{'🟢' if a['action'] == 'BUY' else '🔴' if a['action'] == 'SELL' else '⛔'} "
+                    f"{a['action']} {a['symbol']}"
+                    f" @ {a.get('price', '?')}"
+                )
+                if "reason" in a and isinstance(a["reason"], str):
+                    lines.append(f"   └ {a['reason']}")
+            await update.message.reply_text("\n".join(lines))
+        return
+
+    # Default: show status from both orchestrator and auto-trader
+    orchestrator = context.bot_data.get("orchestrator")
+    at_status = auto_trader.status_text()
+    parts = [at_status]
+
+    if orchestrator:
+        status = orchestrator.get_status()
+        parts.append(
+            "⛓️ 鏈上監控\n"
+            f"錢包：{'可用' if status.get('wallet_available') else '唯讀'}\n"
+            f"已處理信號：{status['stats']['total_signals_processed']}\n"
+            f"成功交易：{status['stats']['successful_trades']}"
+        )
+
+    await update.message.reply_text("\n\n".join(parts))
 
 
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -741,3 +851,319 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     lines.append(f"\n📁 完整記錄保存在: data/sessions/{session_id}.json")
 
     await update.message.reply_text("\n".join(lines))
+
+
+# =====================================================================
+# NEW: Priority 1 — Deep Persona Analysis (/deep, /deepscan)
+# =====================================================================
+
+async def deep_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Multi-persona AI analysis for one or more stocks."""
+    if not context.args:
+        await update.message.reply_text(
+            "用法：/deep <股票代碼>\n\n"
+            "用 5 個 AI 分析師從不同角度評估一檔股票。\n"
+            "範例：/deep 2330\n"
+            "      /deep AAPL"
+        )
+        return
+
+    await update.message.chat.send_action("typing")
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        await update.message.reply_text("錯誤：未設定 DEEPSEEK_API_KEY")
+        return
+
+    for symbol in context.args:
+        await update.message.reply_text(f"🔍 正在用 5 個 AI 分析師評估 {symbol}，請稍候...")
+        from .stock import _scan_single
+        data = _scan_single(symbol)
+        if not data:
+            await update.message.reply_text(f"❌ 無法取得 {symbol} 的數據")
+            continue
+        result = analyze_stock(data)
+        await update.message.reply_text(result["summary"])
+
+
+async def deepscan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Scan watchlist using multi-persona AI analysis."""
+    from .stock import _scan_single, TAIWAN_WATCHLIST
+
+    await update.message.chat.send_action("typing")
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        await update.message.reply_text("錯誤：未設定 DEEPSEEK_API_KEY")
+        return
+
+    symbols = [_normalize_symbol(s) for s in TAIWAN_WATCHLIST]
+    await update.message.reply_text(f"🧠 深層 AI 掃描 {len(symbols)} 個標的，請稍候（約 30 秒）...")
+
+    results = []
+    for s in symbols:
+        data = _scan_single(s)
+        if data:
+            r = analyze_stock(data)
+            results.append(r)
+
+    if not results:
+        await update.message.reply_text("掃描失敗，無法取得數據。")
+        return
+
+    # Sort by consensus_score descending
+    results.sort(key=lambda r: r["consensus_score"], reverse=True)
+
+    lines = ["🧠 深層 AI 掃描結果（排序：最看好 → 最看淡）\n"]
+    for r in results[:10]:
+        icon = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪"}.get(r["consensus_rating"], "⚪")
+        lines.append(
+            f"{icon} {r['name']} ({r['symbol']}) "
+            f"{r['consensus_rating']} "
+            f"信心 {r['confidence']:.0%}"
+        )
+    lines.append("")
+    lines.append("(分析使用 DeepSeek AI，僅供參考)")
+    await update.message.reply_text("\n".join(lines))
+
+    # Also send top BUY picks in detail
+    buys = [r for r in results if r["consensus_rating"] == "BUY"][:3]
+    for b in buys:
+        await update.message.reply_text(b["summary"])
+
+
+# =====================================================================
+# NEW: Priority 2 — Consolidated Portfolio Briefing (/consolidated)
+# =====================================================================
+
+async def consolidated_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Unified portfolio briefing from all subsystems."""
+    await update.message.chat.send_action("typing")
+
+    # Gather stock scan data
+    from .stock import _scan_single, TAIWAN_WATCHLIST
+    scan_data = []
+    for s in TAIWAN_WATCHLIST:
+        d = _scan_single(s)
+        if d:
+            scan_data.append(d)
+
+    agent: PortfolioManagerAgent = context.bot_data.get("portfolio_manager_agent")
+    if not agent:
+        agent = PortfolioManagerAgent()
+        context.bot_data["portfolio_manager_agent"] = agent
+
+    orchestrator = context.bot_data.get("orchestrator")
+    briefing = agent.synthesize(scan_results=scan_data, orchestrator=orchestrator)
+
+    await update.message.reply_text(briefing)
+
+
+# =====================================================================
+# NEW: Priority 4 — Portfolio Risk Status (/risk)
+# =====================================================================
+
+async def risk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show portfolio risk status."""
+    pm: PortfolioRiskManager = context.bot_data.get("portfolio_risk_manager")
+    if not pm:
+        pm = PortfolioRiskManager()
+        context.bot_data["portfolio_risk_manager"] = pm
+    await update.message.reply_text(pm.text_summary())
+
+
+# =====================================================================
+# NEW: Priority 5 — Simulated Trading (/buysim, /sellsim, /simportfolio)
+# =====================================================================
+
+async def buysim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Record a simulated buy."""
+    args = context.args or []
+    if len(args) < 3:
+        await update.message.reply_text("用法：/buysim <代碼> <股數> <成本價> [備註]")
+        return
+
+    symbol = _normalize_symbol(args[0])
+    try:
+        shares = float(args[1])
+        price = float(args[2])
+    except ValueError:
+        await update.message.reply_text("股數和成本價必須是數字")
+        return
+
+    note = " ".join(args[3:]) if len(args) > 3 else ""
+    sim_pm = context.bot_data.get("sim_portfolio")
+    if not sim_pm:
+        sim_pm = PortfolioManager(simulation=True)
+        context.bot_data["sim_portfolio"] = sim_pm
+
+    trade_id = sim_pm.buy(symbol, shares, price, note)
+    await update.message.reply_text(
+        f"🟡 *模擬* 買入記錄已儲存！(#{trade_id})\n"
+        f"{symbol}  {shares:.0f} 股  @ {price:.3f}"
+        + (f"\n備註：{note}" if note else ""),
+        parse_mode="Markdown",
+    )
+
+
+async def sellsim_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Record a simulated sell."""
+    args = context.args or []
+    if len(args) < 3:
+        await update.message.reply_text("用法：/sellsim <代碼> <股數> <賣出價>")
+        return
+
+    symbol = _normalize_symbol(args[0])
+    try:
+        shares = float(args[1])
+        price = float(args[2])
+    except ValueError:
+        await update.message.reply_text("股數和賣出價必須是數字")
+        return
+
+    sim_pm = context.bot_data.get("sim_portfolio")
+    if not sim_pm:
+        await update.message.reply_text("尚無模擬持倉。請先用 /buysim 建立模擬部位。")
+        return
+
+    result = sim_pm.sell(symbol, shares, price)
+    if not result["ok"]:
+        await update.message.reply_text(f"賣出失敗：{result['error']}")
+        return
+
+    pnl = result["realized_pnl"]
+    pnl_pct = result["realized_pnl_pct"]
+    arrow = "▲" if pnl >= 0 else "▼"
+    await update.message.reply_text(
+        f"🟡 *模擬* 賣出記錄已儲存！(#{result['trade_id']})\n"
+        f"{symbol}  {shares:.0f} 股  @ {price:.3f}\n\n"
+        f"均成本：{result['avg_cost']:.3f}\n"
+        f"已實現損益：{arrow} {abs(pnl):.2f} ({arrow}{abs(pnl_pct):.2f}%)",
+        parse_mode="Markdown",
+    )
+
+
+async def simportfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show simulated portfolio."""
+    sim_pm = context.bot_data.get("sim_portfolio")
+    if not sim_pm:
+        await update.message.reply_text(
+            "尚無模擬持倉。\n\n用 /buysim <代碼> <股數> <成本價> 開始模擬交易。"
+        )
+        return
+
+    holdings = sim_pm.list_holdings()
+    if not holdings:
+        await update.message.reply_text("模擬持倉是空的。")
+        return
+
+    await update.message.chat.send_action("typing")
+    lines = ["🟡 模擬持倉損益\n"]
+    total_cost = 0.0
+    total_value = 0.0
+
+    for h in holdings:
+        current = get_current_price(h["symbol"])
+        cost_total = h["avg_cost"] * h["net_shares"]
+        if current:
+            value = current * h["net_shares"]
+            pnl = value - cost_total
+            pnl_pct = pnl / cost_total * 100 if cost_total else 0
+            arrow = "▲" if pnl >= 0 else "▼"
+            lines.append(
+                f"{h['symbol']}\n"
+                f"  股數：{h['net_shares']:.0f}  均成本：{h['avg_cost']:.3f}  現價：{current:.3f}\n"
+                f"  損益：{arrow} {abs(pnl):.2f} ({arrow}{abs(pnl_pct):.2f}%)"
+            )
+            total_cost += cost_total
+            total_value += value
+        else:
+            lines.append(
+                f"{h['symbol']}\n"
+                f"  股數：{h['net_shares']:.0f}  均成本：{h['avg_cost']:.3f}  現價：無法取得"
+            )
+            total_cost += cost_total
+
+    if total_cost > 0:
+        total_pnl = total_value - total_cost
+        total_pnl_pct = total_pnl / total_cost * 100
+        arrow = "▲" if total_pnl >= 0 else "▼"
+        lines.append(
+            f"\n總計\n"
+            f"  成本：{total_cost:.2f}  現值：{total_value:.2f}\n"
+            f"  總損益：{arrow} {abs(total_pnl):.2f} ({arrow}{abs(total_pnl_pct):.2f}%)"
+        )
+
+    lines.append("\n🟡 模擬交易 ≠ 真實持倉，僅供參考")
+    await update.message.reply_text("\n".join(lines))
+
+
+# =====================================================================
+# Real-mode Token Mapping (/tokenmap)
+# =====================================================================
+
+async def tokenmap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manage on-chain token address mappings for real-mode trading."""
+    mapper = TokenMapper()
+    args = context.args or []
+
+    if not args:
+        await update.message.reply_text(mapper.to_text())
+        return
+
+    sub = args[0].lower()
+
+    if sub == "add":
+        if len(args) < 3:
+            await update.message.reply_text(
+                "用法：/tokenmap add <代碼> <chain> <合約地址>\n\n"
+                "範例：/tokenmap add WETH sepolia 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14\n"
+                "      /tokenmap add USDC sepolia 0x...\n\n"
+                "支援的 chain：ethereum, bsc, arbitrum, polygon, avalanche, sepolia"
+            )
+            return
+        symbol = args[1].upper()
+        chain = args[2].lower()
+        address = args[3] if len(args) > 3 else ""
+
+        if not address.startswith("0x") or len(address) != 42:
+            await update.message.reply_text("❌ 無效的合約地址，需為 0x + 40 位十六進位")
+            return
+
+        mapper.set(symbol, chain, address)
+        await update.message.reply_text(
+            f"✅ 已新增代幣映射：{symbol} → {chain}:{address[:10]}..."
+        )
+
+    elif sub == "remove":
+        if len(args) < 2:
+            await update.message.reply_text("用法：/tokenmap remove <代碼>\n範例：/tokenmap remove WETH")
+            return
+        symbol = args[1].upper()
+        if mapper.remove(symbol):
+            await update.message.reply_text(f"🗑 已移除 {symbol} 的映射")
+        else:
+            await update.message.reply_text(f"找不到 {symbol} 的映射")
+
+    elif sub == "balance":
+        """Check native token balance for a mapped symbol's chain."""
+        if len(args) < 2:
+            await update.message.reply_text("用法：/tokenmap balance <代碼>")
+            return
+        symbol = args[1].upper()
+        bridge = context.bot_data.get("auto_trader")
+        if bridge and hasattr(bridge, "real_trade_bridge"):
+            bal = bridge.real_trade_bridge.get_balance(symbol)
+            if bal is not None:
+                await update.message.reply_text(f"💰 {symbol} 鏈上餘額：{bal:.6f} ETH")
+            else:
+                await update.message.reply_text(f"❌ 無法查詢 {symbol} 餘額（無映射或錢包未就緒）")
+        else:
+            await update.message.reply_text("自動交易系統未初始化")
+
+    else:
+        await update.message.reply_text(
+            "用法：\n"
+            "/tokenmap — 檢視所有映射\n"
+            "/tokenmap add <代碼> <chain> <address> — 新增映射\n"
+            "/tokenmap remove <代碼> — 移除映射\n"
+            "/tokenmap balance <代碼> — 查詢鏈上餘額"
+        )
