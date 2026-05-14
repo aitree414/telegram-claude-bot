@@ -80,7 +80,34 @@
       "price": 79.0,
       "date": "2026-05-08",
       "note": "auto: 0.67 conf 67%"
+    },
+    {
+      "id": 10,
+      "symbol": "2330.TW",
+      "action": "buy",
+      "shares": 1,
+      "price": 2270.0,
+      "date": "2026-05-14",
+      "note": "auto: 0.66 conf 66%"
+    },
+    {
+      "id": 11,
+      "symbol": "2303.TW",
+      "action": "buy",
+      "shares": 10,
+      "price": 108.0,
+      "date": "2026-05-14",
+      "note": "auto: 0.40 conf 67%"
+    },
+    {
+      "id": 12,
+      "symbol": "2882.TW",
+      "action": "buy",
+      "shares": 16,
+      "price": 76.7,
+      "date": "2026-05-14",
+      "note": "auto: 0.66 conf 66%"
     }
   ],
-  "next_id": 10
+  "next_id": 13
 }
