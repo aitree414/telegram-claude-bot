@@ -92,6 +92,28 @@ def setup_scheduler(
     # AI 投資委員會每日報告推播
     COMMITTEE_FILE = Path(__file__).resolve().parent.parent / "data" / "committee" / "daily_signals.json"
 
+        # Committee trader cycle (executes trades based on committee signals)
+    async def committee_trader_cycle() -> None:
+        committee_trader = app.bot_data.get("committee_trader")
+        if not committee_trader:
+            return
+        try:
+            actions = committee_trader.run_cycle()
+            if actions:
+                logger.info("Committee trader: %d action(s)", len(actions))
+                if chat_id:
+                    lines = ["📊 AI 委員會自動交易執行：\n"]
+                    for a in actions:
+                        if a["action"] == "BUY":
+                            lines.append(f"  🟢 買入 {a['name']} ({a['symbol']}) x{a['shares']} @ {a['price']:.2f}")
+                        elif a["action"] == "SELL":
+                            lines.append(f"  🔴 賣出 {a['name']} ({a['symbol']}) x{a['shares']} @ {a['price']:.2f}")
+                        elif a["action"] == "BLOCKED":
+                            lines.append(f"  ⚠️ 阻擋 {a['name']} ({a['symbol']})：{a.get('reason', '')}")
+                    await app.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+        except Exception:
+            logger.exception("Committee trader cycle failed")
+
     async def send_committee_report() -> None:
         if not chat_id:
             return
@@ -183,6 +205,7 @@ def setup_scheduler(
         scheduler.add_job(send_daily_reminder, "cron", hour=hour, minute=0)
         scheduler.add_job(send_poly_picks, "cron", hour=9, minute=30)
         scheduler.add_job(send_committee_report, "cron", hour=7, minute=35, day_of_week="mon-fri")
+        scheduler.add_job(committee_trader_cycle, "cron", hour=7, minute=40, day_of_week="mon-fri")
     scheduler.add_job(check_price_alerts, "interval", minutes=5)
     scheduler.add_job(archive_old_sessions, "cron", hour=3, minute=0)  # Daily at 3 AM
 

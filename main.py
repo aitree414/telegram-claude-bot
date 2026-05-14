@@ -69,6 +69,7 @@ from bot.config import get_config
 from manager.portfolio_manager_agent import PortfolioManagerAgent
 from manager.portfolio_risk import PortfolioRiskManager
 from manager.auto_trader import AutoTrader
+from manager.committee_trader import CommitteeTrader
 from manager.real_trader_bridge import RealTradeBridge
 from manager.polymarket_trader import PolymarketTrader
 from manager.polymarket_heartbeat import PolymarketHeartbeat
@@ -125,6 +126,14 @@ def main() -> None:
         real_trade_bridge=real_trade_bridge,
     )
     app.bot_data["auto_trader"] = auto_trader
+
+    # AI 投資委員會自動交易
+    committee_trader = CommitteeTrader(
+        sim_portfolio=sim_portfolio,
+        risk_manager=portfolio_risk_manager,
+    )
+    app.bot_data["committee_trader"] = committee_trader
+    logger.info("AI 委員會自動交易引擎已載入")
 
     # Run automatic repair checks on startup
     repair_manager = get_repair_manager()
