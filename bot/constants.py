@@ -10,6 +10,10 @@ import os
 # Uses gpt-4o by default; also works with gpt-4o-mini, gpt-4-turbo, etc.
 API_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
+# Vision-capable model for image analysis (override via VISION_MODEL env var)
+# Falls back to API_MODEL if not set
+VISION_MODEL = os.environ.get("VISION_MODEL", API_MODEL)
+
 # Token limits
 API_MAX_TOKENS = 4096  # Maximum tokens to generate in API responses
 MAX_CONTEXT_WINDOW = 128000  # GPT-4o context window

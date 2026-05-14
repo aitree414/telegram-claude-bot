@@ -192,6 +192,19 @@ class ClaudeClient:
             logger.error(f"LLM API call failed after {MAX_API_RETRIES} retries: {e}")
             raise
 
+    @staticmethod
+    def _clean_response(text: str) -> str:
+        """Remove leaked DSML/XML tool-call markup from assistant replies."""
+        text = re.sub(
+            r'<\s*\|?\s*DSML\s*\|?\s*.*?<\s*/\s*\|?\s*DSML\s*\|?\s*tool_calls\s*>',
+            '', text, flags=re.DOTALL,
+        )
+        text = re.sub(
+            r'<(?:antml|tool_calls?|invoke|parameter)[^>]*>.*?</(?:antml|tool_calls?|invoke|parameter)[^>]*>',
+            '', text, flags=re.DOTALL,
+        )
+        return text.strip()
+
     def _agentic_loop(self, messages: list, authorized: bool = False,
                      session_id: str = None) -> str:
         """Main agentic loop with context length handling."""
@@ -296,7 +309,7 @@ class ClaudeClient:
                             "content": "我授權你讀取這個檔案/目錄。現在呼叫 read_file 或 list_directory function。只輸出 function call，不要說話。"
                         })
                         continue
-                return content
+                return self._clean_response(content)
 
             # Some APIs may return None for message.content when tool_calls are present.
             # OpenAI format requires content to be a string in subsequent messages.
@@ -343,7 +356,7 @@ class ClaudeClient:
                 tools=None,
                 max_tokens=constants.API_MAX_TOKENS,
             )
-            return response.choices[0].message.content or "任務已執行完畢。"
+            return self._clean_response(response.choices[0].message.content or "") or "任務已執行完畢。"
         except Exception as e:
             logger.error(f"Final API call failed: {e}")
             return "任務已執行，但無法生成最終回覆。"
@@ -390,8 +403,25 @@ class ClaudeClient:
         self, user_id: int, image_data: bytes, media_type: str, caption: str = ""
     ) -> tuple[str, str]:
         """
-        Analyze an image using GPT-4o vision and return (reply, session_id).
+        Analyze an image using a vision-capable model and return (reply, session_id).
+
+        Uses the model from ``VISION_MODEL`` constant (env ``VISION_MODEL``).
+        Falls back to error message if the configured model doesn't support vision.
         """
+        vision_model = constants.VISION_MODEL
+        supports_vision = "gpt-4o" in vision_model or "gpt-4-turbo" in vision_model
+
+        if not supports_vision:
+            reply = (
+                f"目前使用的模型（{vision_model}）不支援圖片分析。\n"
+                f"請設定 VISION_MODEL 環境變數為支援 vision 的模型（如 gpt-4o），"
+                f"或傳送文字描述。"
+            )
+            session_id = self._session_manager.get_or_create_session(user_id, caption or text)
+            self._session_manager.add_message(session_id, "user", f"[圖片] {caption}")
+            self._session_manager.add_message(session_id, "assistant", reply)
+            return reply, session_id
+
         import base64
         b64 = base64.b64encode(image_data).decode("utf-8")
         text = caption or "請分析這張圖片"
@@ -406,7 +436,7 @@ class ClaudeClient:
 
         try:
             response = self._client.chat.completions.create(
-                model=constants.API_MODEL,
+                model=vision_model,
                 messages=messages,
                 max_tokens=constants.API_MAX_TOKENS,
             )
