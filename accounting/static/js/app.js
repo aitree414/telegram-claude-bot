@@ -1831,8 +1831,8 @@ function addItem() {
   const tbody = $id('itemsBody');
   const row = document.createElement('tr');
   row.id = 'itemRow_' + itemCounter;
-  row.innerHTML = \`
-    <td class="text-muted">\${itemCounter}</td>
+  row.innerHTML = `
+    <td class="text-muted">${itemCounter}</td>
     <td><input type="text" class="form-control form-control-sm item-desc" placeholder="Description"></td>
     <td>
       <select class="form-select form-select-sm item-cat">
@@ -1850,7 +1850,7 @@ function addItem() {
     <td><input type="number" class="form-control form-control-sm item-price" step="0.01" min="0" placeholder="0.00" onchange="calcRow(this)" oninput="calcRow(this)"></td>
     <td><input type="number" class="form-control form-control-sm item-amount" step="0.01" readonly style="background:#f8f9fa;font-weight:600;"></td>
     <td class="no-print"><button class="btn btn-sm btn-outline-danger" onclick="removeItem(this)"><i class="bi bi-x"></i></button></td>
-  \`;
+  `;
   tbody.appendChild(row);
   updateTotal();
 }
@@ -1887,13 +1887,13 @@ function previewReceipts() {
       reader.onload = e => {
         const wrap = document.createElement('div');
         wrap.style.position = 'relative';
-        wrap.innerHTML = \`<img src="\${e.target.result}" class="receipt-preview"><br><small class="text-muted">\${f.name}</small>\`;
+        wrap.innerHTML = `<img src="${e.target.result}" class="receipt-preview"><br><small class="text-muted">${f.name}</small>`;
         container.appendChild(wrap);
       };
       reader.readAsDataURL(f);
     } else {
       const wrap = document.createElement('div');
-      wrap.innerHTML = \`<div class="p-3 border rounded text-center"><i class="bi bi-file-pdf fs-1 text-danger"></i><br><small>\${f.name}</small></div>\`;
+      wrap.innerHTML = `<div class="p-3 border rounded text-center"><i class="bi bi-file-pdf fs-1 text-danger"></i><br><small>${f.name}</small></div>`;
       container.appendChild(wrap);
     }
   }
@@ -1965,7 +1965,7 @@ async function submitClaim() {
       throw new Error(err.error || 'Submission failed');
     }
     const result = await res.json();
-    alert(\`✅ Claim submitted successfully!\nTotal: \${currency} \${total.toFixed(2)}\nTransactions created: \${result.transactions_created}\nPDF: \${result.pdf || 'Generated'}\`);
+    alert(`✅ Claim submitted successfully!\nTotal: ${currency} ${total.toFixed(2)}\nTransactions created: ${result.transactions_created}\nPDF: ${result.pdf || 'Generated'}`);
     navigate('#/project/' + encodeURIComponent(project));
   } catch (err) {
     alert('❌ Submission failed: ' + err.message);

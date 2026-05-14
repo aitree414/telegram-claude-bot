@@ -1032,7 +1032,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.error("AI API key invalid")
         await update.message.reply_text("AI 服務認證失敗（API Key 可能已失效），請通知管理員。")
     except openai.APIStatusError as e:
-        logger.error(f"AI API status error: {e.status_code}")
+        logger.error(f"AI API status error: {e.status_code} | body: {e.body}")
         await update.message.reply_text(f"AI 服務異常（{e.status_code}），請稍後再試。")
     except Exception:
         logger.exception("handle_text failed")
