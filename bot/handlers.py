@@ -366,6 +366,56 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"❌ 系統異常: {e}")
 
 
+COMMITTEE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "committee", "daily_signals.json")
+
+
+async def committee_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """查詢 AI 投資委員會今日分析結果"""
+    await update.message.chat.send_action("typing")
+    try:
+        import json
+        from pathlib import Path
+
+        path = Path(COMMITTEE_FILE)
+        if not path.exists():
+            await update.message.reply_text("📭 今日委員會分析尚未執行。\n排程時間：平日 7:05 AM\n\n也可以手動執行：\n`python3 -m ai_quant.committee_service --quick`", parse_mode="Markdown")
+            return
+
+        data = json.loads(path.read_text())
+        summary = data.get("summary", {})
+        date_str = data.get("date", "未知")
+        total = summary.get("total_analyzed", 0)
+
+        # 分類列表
+        def fmt_list(items):
+            if not items:
+                return "（無）"
+            return "、".join([f"{s['code']} {s['name']}" for s in items[:8]])
+
+        msg = (
+            f"🤖 AI 投資委員會報告\n"
+            f"📅 {date_str}  |  分析 {total} 檔\n\n"
+        )
+
+        if summary.get("strong_buy_count"):
+            msg += f"🟢 強力買入 {summary['strong_buy_count']} 檔：\n  {fmt_list(summary.get('strong_buys', []))}\n\n"
+        if summary.get("buy_count"):
+            msg += f"🔵 買入 {summary['buy_count']} 檔：\n  {fmt_list(summary.get('buys', []))}\n\n"
+        if summary.get("hold_count"):
+            msg += f"⚪ 持有 {summary['hold_count']} 檔\n\n"
+        if summary.get("sell_count"):
+            msg += f"🔴 賣出 {summary['sell_count']} 檔：\n  {fmt_list(summary.get('sells', []))}\n\n"
+        if summary.get("strong_sell_count"):
+            msg += f"⛔ 強力賣出 {summary['strong_sell_count']} 檔：\n  {fmt_list(summary.get('strong_sells', []))}\n\n"
+
+        msg += "🔍 詳細分析請見 Dashboard：http://localhost:8888"
+
+        await update.message.reply_text(msg)
+    except Exception as e:
+        logger.exception("committee_command failed")
+        await update.message.reply_text(f"❌ 查詢失敗: {e}")
+
+
 async def analysis_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.message.reply_text("用法：/analysis <股票代碼>\n\n例如：/analysis 0700")

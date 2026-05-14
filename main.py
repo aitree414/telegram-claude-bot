@@ -27,6 +27,7 @@ from bot.handlers import (
     buy_command,
     buysim_command,
     clear_command,
+    committee_command,
     consolidated_command,
     cookies_command,
     copy_command,
@@ -187,6 +188,7 @@ def main() -> None:
     app.add_handler(CommandHandler("buysim", buysim_command))
     app.add_handler(CommandHandler("sellsim", sellsim_command))
     app.add_handler(CommandHandler("simportfolio", simportfolio_command))
+    app.add_handler(CommandHandler("committee", committee_command))
     app.add_handler(CommandHandler("health", health_command))
     app.add_handler(CommandHandler("fetch", fetch_command))
     app.add_handler(CommandHandler("cookies", cookies_command))

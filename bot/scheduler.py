@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -87,6 +89,51 @@ def setup_scheduler(
         except Exception:
             logger.exception("Session 歸檔失敗")
 
+    # AI 投資委員會每日報告推播
+    COMMITTEE_FILE = Path(__file__).resolve().parent.parent / "data" / "committee" / "daily_signals.json"
+
+    async def send_committee_report() -> None:
+        if not chat_id:
+            return
+        if not COMMITTEE_FILE.exists():
+            logger.warning("委員會報告不存在：%s", COMMITTEE_FILE)
+            return
+        try:
+            data = json.loads(COMMITTEE_FILE.read_text())
+            summary = data.get("summary", {})
+            date_str = data.get("date", "未知")
+
+            # 分類標題與 emoji
+            signals = []
+            if summary.get("strong_buy_count"):
+                names = [s["name"] for s in summary.get("strong_buys", [])]
+                signals.append(f"🟢 強力買入 {summary['strong_buy_count']} 檔：{'、'.join(names[:5])}")
+            if summary.get("buy_count"):
+                names = [s["name"] for s in summary.get("buys", [])]
+                signals.append(f"🔵 買入 {summary['buy_count']} 檔：{'、'.join(names[:5])}")
+            if summary.get("hold_count"):
+                signals.append(f"⚪ 持有 {summary['hold_count']} 檔")
+            if summary.get("sell_count"):
+                names = [s["name"] for s in summary.get("sells", [])]
+                signals.append(f"🔴 賣出 {summary['sell_count']} 檔：{'、'.join(names[:5])}")
+            if summary.get("strong_sell_count"):
+                names = [s["name"] for s in summary.get("strong_sells", [])]
+                signals.append(f"⛔ 強力賣出 {summary['strong_sell_count']} 檔：{'、'.join(names[:5])}")
+            if summary.get("error_count"):
+                signals.append(f"⚠️ 分析失敗 {summary['error_count']} 檔")
+
+            msg = (
+                f"🤖 AI 投資委員會報告 ({date_str})\n"
+                f"{'─' * 20}\n"
+                f"{chr(10).join(signals)}\n"
+                f"{'─' * 20}\n"
+                f"詳情請見 Dashboard：http://localhost:8888"
+            )
+            await app.bot.send_message(chat_id=chat_id, text=msg)
+            logger.info("委員會報告已推播至 %s", chat_id)
+        except Exception:
+            logger.exception("委員會報告推播失敗")
+
     # Auto-trader cycle (closes the analysis→execution loop)
     async def auto_trader_cycle() -> None:
         auto_trader = app.bot_data.get("auto_trader")
@@ -135,6 +182,7 @@ def setup_scheduler(
     if chat_id:
         scheduler.add_job(send_daily_reminder, "cron", hour=hour, minute=0)
         scheduler.add_job(send_poly_picks, "cron", hour=9, minute=30)
+        scheduler.add_job(send_committee_report, "cron", hour=7, minute=35, day_of_week="mon-fri")
     scheduler.add_job(check_price_alerts, "interval", minutes=5)
     scheduler.add_job(archive_old_sessions, "cron", hour=3, minute=0)  # Daily at 3 AM
 
