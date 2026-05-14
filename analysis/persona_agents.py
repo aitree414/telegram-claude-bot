@@ -1,9 +1,14 @@
 """LLM-powered investor persona agents for multi-perspective stock analysis.
 
-Each agent adopts a distinct investment philosophy and analyzes the same
+Each agent adopts a distinct investment philosophy and analyses the same
 market data independently, producing diverse signals that feed into
 the portfolio manager.
+
+Supports a 2-round debate: Round 1 = independent analysis,
+Round 2 = agents see each other's views and update their rating.
 """
+
+from __future__ import annotations
 
 import json
 import logging
@@ -17,23 +22,29 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Lightweight DeepSeek caller (no session/tool overhead like ClaudeClient)
+# Lightweight LLM caller (OpenAI GPT, configurable via env vars)
 # ---------------------------------------------------------------------------
 
-def _call_deepseek(system_prompt: str, user_prompt: str,
-                   max_tokens: int = 1024, temperature: float = 0.7) -> str:
-    """Single-turn DeepSeek chat call with retry."""
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-    if not api_key:
-        return "錯誤：未設定 DEEPSEEK_API_KEY"
+def _call_llm(system_prompt: str, user_prompt: str,
+              max_tokens: int = 1024, temperature: float = 0.7) -> str:
+    """Single-turn LLM chat call with retry.
 
-    client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+    Uses OPENAI_API_KEY (or DEEPSEEK_API_KEY as fallback).
+    Override endpoint via OPENAI_BASE_URL, model via OPENAI_MODEL env var.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        return "錯誤：未設定 API 金鑰（OPENAI_API_KEY 或 DEEPSEEK_API_KEY）"
+
+    base_url = os.environ.get("OPENAI_BASE_URL", None)
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
     last_error = ""
 
     for attempt in range(3):
         try:
             resp = client.chat.completions.create(
-                model="deepseek-chat",
+                model=model,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 messages=[
@@ -57,7 +68,7 @@ def _call_deepseek(system_prompt: str, user_prompt: str,
             last_error = str(e)
             break
 
-    logger.error(f"DeepSeek call failed after 3 retries: {last_error}")
+    logger.error(f"LLM call failed after 3 retries: {last_error}")
     return f"分析失敗（API 錯誤）"
 
 
@@ -157,7 +168,7 @@ def analyze_with_persona(persona: str, system_prompt: str,
         data_lines.append(f"營收成長: {fund.get('revenue_growth', 'N/A')}%")
 
     user_prompt = "請分析以下股票數據並給出評級：\n\n" + "\n".join(data_lines)
-    raw = _call_deepseek(system_prompt, user_prompt, max_tokens=512, temperature=0.7)
+    raw = _call_llm(system_prompt, user_prompt, max_tokens=512, temperature=0.7)
 
     # Parse JSON from response
     try:
@@ -192,3 +203,82 @@ PERSONA_NAMES = {
     "contrarian": "逆向型",
     "risk_manager": "風控型",
 }
+
+
+# ---------------------------------------------------------------------------
+# Debate round
+# ---------------------------------------------------------------------------
+
+DEBATE_PROMPT = """你是{persona_name}投資分析師。
+
+你已在第一輪分析了 {symbol} 的數據並給出了初步評級。
+
+以下是其他分析師的看法：
+
+{peer_views}
+
+請參考同行觀點，重新評估你的判断。你可以：
+- 堅持原有的分析（如果你認為其他人忽略了關鍵因素）
+- 調整評級（如果同行提出了你沒有考慮到的觀點）
+
+回覆格式（嚴格 JSON）：
+{{"rating": "BUY/SELL/HOLD", "confidence": 0-100, "reason": "一句話理由（可提及是否受同行影響）"}}"""
+
+
+def build_debate_context(round1_results: list[dict]) -> str:
+    """Compile Round 1 results into a debate summary for the LLM."""
+    lines = []
+    for r in round1_results:
+        p = r.get("persona", "?")
+        label = PERSONA_NAMES.get(p, p)
+        rating = r.get("rating", "HOLD")
+        conf = r.get("confidence", 0)
+        reason = r.get("reason", "")
+        lines.append(f"- [{label}] {rating} (信心 {conf}%): {reason}")
+    return "\n".join(lines)
+
+
+def analyze_with_persona_debate(persona: str, system_prompt: str,
+                                 stock_data: dict,
+                                 peer_views: str) -> dict:
+    """Debate round: persona sees peer analyses and updates their rating.
+
+    Parameters
+    ----------
+    persona : str            — agent key (e.g. "value")
+    system_prompt : str      — the persona's system prompt (PERSONA_PROMPTS[persona])
+    stock_data : dict        — same stock data as round 1
+    peer_views : str         — ``build_debate_context()`` output
+
+    Returns
+    -------
+    dict with rating, confidence, reason, persona keys.
+    """
+    symbol = stock_data.get("symbol", "N/A")
+    label = PERSONA_NAMES.get(persona, persona)
+    user_prompt = DEBATE_PROMPT.format(
+        persona_name=label,
+        symbol=symbol,
+        peer_views=peer_views,
+    )
+    raw = _call_llm(system_prompt, user_prompt, max_tokens=512, temperature=0.5)
+
+    try:
+        json_str = raw
+        if "```json" in raw:
+            json_str = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:
+            json_str = raw.split("```")[1].split("```")[0].strip()
+        result = json.loads(json_str)
+        result["persona"] = persona
+        result["debate_round"] = True
+        return result
+    except (json.JSONDecodeError, KeyError, IndexError):
+        logger.warning(f"Persona '{persona}' debate response unparseable: {raw[:200]}")
+        return {
+            "persona": persona,
+            "rating": "HOLD",
+            "confidence": 0,
+            "reason": "辯論回覆解析失敗",
+            "debate_round": True,
+        }

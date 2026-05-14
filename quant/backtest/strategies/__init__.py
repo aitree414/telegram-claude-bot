@@ -8,7 +8,13 @@ from .base_strategies import (
     BollingerBandsStrategy,
     RSIStrategy,
     MACDStrategy,
-    CombinedStrategy
+    CombinedStrategy,
+    create_strategy,
+)
+from .crypto_strategies import (
+    TrendFollowingStrategy,
+    GridRecoveryStrategy,
+    VolatilityBreakoutStrategy,
 )
 
 __all__ = [
@@ -17,4 +23,8 @@ __all__ = [
     "RSIStrategy",
     "MACDStrategy",
     "CombinedStrategy",
+    "TrendFollowingStrategy",
+    "GridRecoveryStrategy",
+    "VolatilityBreakoutStrategy",
+    "create_strategy",
 ]

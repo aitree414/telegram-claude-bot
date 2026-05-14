@@ -29,8 +29,16 @@ class Config:
         # Telegram Bot
         self.telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-        # DeepSeek API (using DEEPSEEK_API_KEY for compatibility)
-        self.deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
+        # API key for LLM (OPENAI_API_KEY preferred, fallback to DEEPSEEK_API_KEY)
+        self.api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
+
+        # TradingAgents multi-agent analysis
+        self.tradingagents_enabled = os.environ.get(
+            "TRADINGAGENTS_ENABLED", "false"
+        ).lower() == "true"
+        self.tradingagents_llm_provider = os.environ.get(
+            "TRADINGAGENTS_LLM_PROVIDER", "deepseek"
+        )
 
         # User authorization
         self.authorized_user_id = int(os.environ.get("AUTHORIZED_USER_ID", "0"))
@@ -52,12 +60,14 @@ class Config:
             logger.warning("REMINDER_HOUR format error, using default 8")
 
         # Paths
-        self.data_dir = Path(__file__).parent.parent / "data"
+        bot_name = os.environ.get("BOT_NAME", "")
+        data_dir_base = Path(__file__).parent.parent / "data"
+        self.data_dir = data_dir_base / bot_name if bot_name else data_dir_base
         self.sessions_dir = self.data_dir / "sessions"
         self.archive_dir = self.sessions_dir / "archive"
 
         # Web app paths (if applicable)
-        self.web_apps_data_dir = Path(__file__).parent.parent / "web-apps" / "data"
+        self.web_apps_data_dir = self.data_dir.parent / "web-apps" / "data"
 
         # Onchain data paths
         self.onchain_data_dir = self.data_dir / "onchain"
@@ -72,8 +82,8 @@ class Config:
         if not self.telegram_bot_token:
             errors.append("TELEGRAM_BOT_TOKEN is required")
 
-        if not self.deepseek_api_key:
-            errors.append("DEEPSEEK_API_KEY is required")
+        if not self.api_key:
+            errors.append("OPENAI_API_KEY or DEEPSEEK_API_KEY is required")
 
         if errors:
             error_msg = ", ".join(errors)
@@ -90,7 +100,7 @@ class Config:
 
         return {
             "telegram_bot_token": bool(self.telegram_bot_token),
-            "deepseek_api_key": bool(self.deepseek_api_key),
+            "api_key": bool(self.api_key),
             "authorized_user_id": self.authorized_user_id,
             "reminder_chat_id": self.reminder_chat_id,
             "reminder_hour": self.reminder_hour,

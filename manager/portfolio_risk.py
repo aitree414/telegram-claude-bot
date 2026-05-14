@@ -43,8 +43,14 @@ class PortfolioRiskManager:
         return {
             "date": str(date.today()),
             "stock_trades_today": 0,
+            "polymarket_trades_today": 0,
             "total_trades_today": 0,
             "daily_loss": 0.0,
+            "daily_polymarket_pnl": 0.0,
+            "daily_stock_pnl": 0.0,
+            "total_polymarket_pnl": 0.0,
+            "total_stock_pnl": 0.0,
+            "peak_portfolio_value": 0.0,
         }
 
     def _save(self) -> None:
@@ -89,6 +95,14 @@ class PortfolioRiskManager:
     @property
     def max_sector_exposure_pct(self) -> float:
         return float(os.environ.get("RISK_MAX_SECTOR_EXPOSURE_PCT", "35"))
+
+    @property
+    def max_polymarket_trades_daily(self) -> int:
+        return int(os.environ.get("RISK_MAX_POLYMARKET_TRADES_DAILY", "5"))
+
+    @property
+    def max_polymarket_spend_daily(self) -> float:
+        return float(os.environ.get("RISK_MAX_POLYMARKET_SPEND_DAILY", "50.0"))
 
     # ------------------------------------------------------------------
     # Validation
@@ -165,8 +179,66 @@ class PortfolioRiskManager:
         self._state["total_trades_today"] += 1
         if is_stock:
             self._state["stock_trades_today"] += 1
+            if pnl != 0:
+                self._state["daily_stock_pnl"] = self._state.get("daily_stock_pnl", 0.0) + pnl
+                self._state["total_stock_pnl"] = self._state.get("total_stock_pnl", 0.0) + pnl
         if pnl < 0:
-            self._state["daily_loss"] += abs(pnl)
+            self._state["daily_loss"] = self._state.get("daily_loss", 0.0) + abs(pnl)
+        self._save()
+
+    # ── Polymarket-specific ─────────────────────
+
+    def validate_polymarket_trade(
+        self, amount: float, current_positions: int = 0,
+    ) -> tuple[bool, str]:
+        """Check whether a Polymarket trade is allowed by risk limits.
+
+        Parameters
+        ----------
+        amount : float
+            Proposed trade value in USDC.
+        current_positions : int
+            Number of current open Polymarket positions.
+
+        Returns
+        -------
+        (allowed: bool, reason: str)
+        """
+        self._check_reset()
+
+        polymarket_trades = self._state.get("polymarket_trades_today", 0)
+        if polymarket_trades >= self.max_polymarket_trades_daily:
+            return False, (
+                f"今日 Polymarket 交易已達上限 ({polymarket_trades}/{self.max_polymarket_trades_daily})"
+            )
+
+        total_trades = self._state.get("total_trades_today", 0)
+        if total_trades >= self.max_total_trades_daily:
+            return False, (
+                f"今日總交易次數已達上限 ({total_trades}/{self.max_total_trades_daily})"
+            )
+
+        # Track cumulative spend
+        daily_pm_spend = self._state.get("daily_polymarket_spend", 0.0)
+        if daily_pm_spend + amount > self.max_polymarket_spend_daily:
+            return False, (
+                f"Polymarket 日花費超限 (${daily_pm_spend + amount:.2f} > ${self.max_polymarket_spend_daily:.2f})"
+            )
+
+        return True, "OK"
+
+    def record_polymarket_trade(self, amount: float = 0.0, pnl: float = 0.0) -> None:
+        """Record a Polymarket trade for daily limit tracking."""
+        self._check_reset()
+        self._state["total_trades_today"] = self._state.get("total_trades_today", 0) + 1
+        self._state["polymarket_trades_today"] = self._state.get("polymarket_trades_today", 0) + 1
+        self._state["daily_polymarket_spend"] = self._state.get("daily_polymarket_spend", 0.0) + amount
+
+        if pnl != 0:
+            self._state["daily_polymarket_pnl"] = self._state.get("daily_polymarket_pnl", 0.0) + pnl
+            self._state["total_polymarket_pnl"] = self._state.get("total_polymarket_pnl", 0.0) + pnl
+            if pnl < 0:
+                self._state["daily_loss"] = self._state.get("daily_loss", 0.0) + abs(pnl)
         self._save()
 
     def check_drawdown(self, portfolio_value: float, peak_value: float) -> Optional[str]:
@@ -190,11 +262,21 @@ class PortfolioRiskManager:
 
     def text_summary(self) -> str:
         self._check_reset()
+        pm_trades = self._state.get("polymarket_trades_today", 0)
+        stock_trades = self._state.get("stock_trades_today", 0)
+        total_trades = self._state.get("total_trades_today", 0)
+        daily_loss = self._state.get("daily_loss", 0.0)
+        pm_pnl = self._state.get("daily_polymarket_pnl", 0.0)
+        stock_pnl = self._state.get("daily_stock_pnl", 0.0)
+
         return (
             f"📊 風控日誌（{self._state['date']}）\n"
-            f"今日股票交易：{self._state['stock_trades_today']}/{self.max_stock_trades_daily}\n"
-            f"今日總交易：{self._state['total_trades_today']}/{self.max_total_trades_daily}\n"
-            f"今日累計虧損：{self._state['daily_loss']:.2f}\n"
+            f"今日股票交易：{stock_trades}/{self.max_stock_trades_daily}\n"
+            f"今日 Polymarket：{pm_trades}/{self.max_polymarket_trades_daily}\n"
+            f"今日總交易：{total_trades}/{self.max_total_trades_daily}\n"
+            f"今日股票 P&L：{stock_pnl:+.2f}\n"
+            f"今日 Polymarket P&L：{pm_pnl:+.2f}\n"
+            f"今日累計虧損：{daily_loss:.2f}\n"
             f"單一資產上限：{self.max_single_position_pct}%\n"
             f"最大持倉數：{self.max_open_positions}"
         )

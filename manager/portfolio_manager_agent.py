@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 import openai
 
-from analysis.persona_agents import _call_deepseek
+from analysis.persona_agents import _call_llm
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ class PortfolioManagerAgent:
             + "\n".join(lines)
         )
 
-        raw = _call_deepseek(
+        raw = _call_llm(
             system_prompt=(
                 "你是一個謹慎的投資組合經理。你的建議必須保守、有理有據。"
                 "每次回覆控制在 200 字以內。"

@@ -76,9 +76,10 @@ def compile_contract(contract_name: str) -> Optional[Dict[str, Any]]:
         # Find the contract in output
         contract_key = f'{sol_path}:{contract_name}'
         if contract_key not in output:
-            # Try to find any contract in the output
+            # Try to find by matching :ContractName exactly (after the colon)
+            suffix = f':{contract_name}'
             for key in output:
-                if contract_name in key:
+                if key.endswith(suffix):
                     contract_key = key
                     break
             else:

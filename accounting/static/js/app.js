@@ -29,6 +29,12 @@ function statusBadge(status) {
     return `<span class="badge rounded-pill badge-${status}">${labels[status] || status}</span>`;
 }
 
+function docStatusBadge(status) {
+    const labels = { draft: '草稿', sent: '已發出', accepted: '已接受', rejected: '已拒絕', expired: '已過期', paid: '已收款', overdue: '逾期', cancelled: '已取消' };
+    const colors = { draft: 'secondary', sent: 'primary', accepted: 'success', rejected: 'danger', expired: 'warning', paid: 'success', overdue: 'danger', cancelled: 'secondary' };
+    return `<span class="badge bg-${colors[status] || 'secondary'}">${labels[status] || status}</span>`;
+}
+
 // ---- API Calls ----
 
 async function apiGet(url) {
@@ -123,7 +129,6 @@ async function doLogin(event) {
         }
         const data = await res.json();
         showApp(data.username);
-        // Load exchange rates after login
         loadExchangeRates();
         navigate(window.location.hash || '#/');
     } catch (err) {
@@ -173,6 +178,7 @@ function fmtAmountWithHKD(amount, currency, arrowClass) {
 function navigate(hash) {
     const route = hash.replace(/^#\//, '') || 'dashboard';
     currentRoute = route;
+
     if (route === 'dashboard') {
         renderDashboard();
     } else if (route.startsWith('year/')) {
@@ -188,6 +194,24 @@ function navigate(hash) {
         renderSupplierDetail(name);
     } else if (route === 'backups') {
         renderBackups();
+    } else if (route === 'quotations') {
+        renderQuotationList();
+    } else if (route.match(/^quotations\/([^/]+)\/(.+)/)) {
+        const m = route.match(/^quotations\/([^/]+)\/(.+)/);
+        renderQuotationDetail(m[1], m[2]);
+    } else if (route.startsWith('quotations/')) {
+        const code = route.replace('quotations/', '');
+        renderProjectQuotations(code);
+    } else if (route === 'invoices') {
+        renderInvoiceList();
+    } else if (route.match(/^invoices\/([^/]+)\/(.+)/)) {
+        const m = route.match(/^invoices\/([^/]+)\/(.+)/);
+        renderInvoiceDetail(m[1], m[2]);
+    } else if (route.startsWith('invoices/')) {
+        const code = route.replace('invoices/', '');
+        renderProjectInvoices(code);
+    } else if (route === 'claim') {
+        renderClaimForm();
     } else {
         renderDashboard();
     }
@@ -230,7 +254,6 @@ async function renderDashboard() {
             return;
         }
 
-        // Year tabs
         let html = `
             <div class="page-header">
                 <h4><i class="bi bi-grid-fill me-2 text-primary"></i>專案儀表板</h4>
@@ -246,7 +269,6 @@ async function renderDashboard() {
 
         html += '</div>';
 
-        // Show latest year by default
         const latest = years[0];
         html += renderYearSummaryCard(latest);
         html += '<h5 class="mb-3 mt-4">專案列表</h5><div class="row g-4">';
@@ -405,7 +427,6 @@ async function renderProjectDetail(code) {
     try {
         const project = await apiGet(`/projects/${code}`);
 
-        // Stats row
         let html = `
             <div class="page-header d-flex justify-content-between align-items-center flex-wrap">
                 <div>
@@ -417,9 +438,17 @@ async function renderProjectDetail(code) {
                     <span class="status-badge status-${project.status === 'active' ? 'active' : 'archived'} ms-2"></span>
                     <small class="text-muted">${project.status === 'active' ? '進行中' : '已歸檔'}</small>
                 </div>
-                <button class="btn btn-primary mt-2 mt-md-0" onclick="openAddModal('${project.code}')">
-                    <i class="bi bi-plus-lg me-1"></i>新增交易
-                </button>
+                <div class="mt-2 mt-md-0">
+                    <button class="btn btn-outline-primary btn-sm me-1" onclick="openAddModal('${project.code}')">
+                        <i class="bi bi-plus-lg me-1"></i>新增交易
+                    </button>
+                    <button class="btn btn-outline-success btn-sm me-1" onclick="openQuoteModal('${project.code}')">
+                        <i class="bi bi-file-text me-1"></i>報價單
+                    </button>
+                    <a href="#/quotations/${project.code}" class="btn btn-outline-info btn-sm">
+                        <i class="bi bi-list me-1"></i>查看報價
+                    </a>
+                </div>
             </div>
 
             <div class="row g-3 mb-4">
@@ -460,7 +489,6 @@ async function renderProjectDetail(code) {
                 </div>
             </div>`;
 
-        // Transactions table
         const txs = project.transactions || [];
         if (txs.length === 0) {
             html += `
@@ -907,7 +935,1046 @@ async function triggerBackup() {
     }
 }
 
-// ---- Modal Operations ----
+// ════════════════════════════════════════════════════════════════════
+//  QUOTATIONS & INVOICES
+// ════════════════════════════════════════════════════════════════════
+
+// ---- Helpers ----
+
+function renderDocCard(doc, type) {
+    const statusIcon = { draft: '📄', sent: '📨', accepted: '✅', rejected: '❌', expired: '⏰', paid: '💰', overdue: '⚠️', cancelled: '🚫' };
+    const prefix = type === 'quotations' ? 'Q' : 'INV';
+    const items = doc.items || [];
+    const itemSummary = items.map(i => `${i.desc} x${i.qty}`).join(', ');
+    const clientName = doc.client?.name || '—';
+    return `
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card project-card h-100" onclick="navigate('#/${type}/${doc.project_code}/${doc.id}')">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5>${doc.id}</h5>
+                            <small class="opacity-75">${clientName}</small>
+                        </div>
+                        ${docStatusBadge(doc.status)}
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>總額</span>
+                        <span class="fw-bold">${doc.currency || 'HKD'} ${fmtNum(doc.total)}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>日期</span>
+                        <span>${fmtDate(doc.date)}</span>
+                    </div>
+                    <div class="text-muted small">${doc.project_code}</div>
+                    ${itemSummary ? `<div class="text-muted small mt-1">${itemSummary}</div>` : ''}
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderDocDetail(doc, type) {
+    const statusIcon = { draft: '📄', sent: '📨', accepted: '✅', rejected: '❌', expired: '⏰', paid: '💰', overdue: '⚠️', cancelled: '🚫' };
+    const items = doc.items || [];
+    const client = doc.client || {};
+
+    let html = `
+        <div class="page-header d-flex justify-content-between align-items-center flex-wrap">
+            <div>
+                <a href="#/${type}" class="btn btn-outline-secondary btn-sm me-2">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="d-inline">${doc.id}</h4>
+                ${docStatusBadge(doc.status)}
+                <span class="badge bg-secondary ms-2">${doc.project_code}</span>
+            </div>
+            <div class="mt-2 mt-md-0">`;
+
+    // Action buttons
+    if (type === 'quotations') {
+        if (doc.status === 'draft') {
+            html += `
+                <button class="btn btn-primary btn-sm me-1" onclick="updateDocStatus('${doc.project_code}','${doc.id}','quotations','sent')">
+                    <i class="bi bi-send me-1"></i>標記已發出
+                </button>
+                <button class="btn btn-success btn-sm me-1" onclick="convertToInvoice('${doc.project_code}','${doc.id}')">
+                    <i class="bi bi-receipt me-1"></i>轉發票
+                </button>`;
+        } else if (doc.status === 'sent') {
+            html += `
+                <button class="btn btn-success btn-sm me-1" onclick="updateDocStatus('${doc.project_code}','${doc.id}','quotations','accepted')">
+                    <i class="bi bi-check-lg me-1"></i>接受
+                </button>
+                <button class="btn btn-danger btn-sm me-1" onclick="updateDocStatus('${doc.project_code}','${doc.id}','quotations','rejected')">
+                    <i class="bi bi-x-lg me-1"></i>拒絕
+                </button>
+                <button class="btn btn-success btn-sm me-1" onclick="convertToInvoice('${doc.project_code}','${doc.id}')">
+                    <i class="bi bi-receipt me-1"></i>轉發票
+                </button>`;
+        }
+    } else {
+        // Invoice actions
+        if (doc.status === 'draft' || doc.status === 'sent') {
+            html += `
+                <button class="btn btn-success btn-sm me-1" onclick="markPaid('${doc.project_code}','${doc.id}')">
+                    <i class="bi bi-cash me-1"></i>標記已收款
+                </button>`;
+        }
+    }
+
+    if (type === 'quotations') {
+        html += `
+                <button class="btn btn-danger btn-sm" onclick="deleteDoc('${doc.project_code}','${doc.id}','quotations')">
+                    <i class="bi bi-trash me-1"></i>刪除
+                </button>`;
+    } else {
+        html += `
+                <button class="btn btn-danger btn-sm" onclick="deleteDoc('${doc.project_code}','${doc.id}','invoices')">
+                    <i class="bi bi-trash me-1"></i>刪除
+                </button>`;
+    }
+
+    html += `
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="text-muted mb-2"><i class="bi bi-person me-1"></i>客戶資訊</h6>
+                        <table class="table table-sm mb-0">
+                            <tr><td class="text-muted">名稱</td><td class="fw-bold">${client.name || '-'}</td></tr>
+                            <tr><td class="text-muted">聯絡人</td><td>${client.contact || '-'}</td></tr>
+                            <tr><td class="text-muted">Email</td><td>${client.email || '-'}</td></tr>
+                            <tr><td class="text-muted">電話</td><td>${client.phone || '-'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="text-muted mb-2"><i class="bi bi-info-circle me-1"></i>文件資訊</h6>
+                        <table class="table table-sm mb-0">
+                            <tr><td class="text-muted">日期</td><td class="fw-bold">${fmtDate(doc.date)}</td></tr>
+                            ${doc.valid_until ? `<tr><td class="text-muted">有效至</td><td>${fmtDate(doc.valid_until)}</td></tr>` : ''}
+                            ${doc.due_date ? `<tr><td class="text-muted">到期日</td><td>${fmtDate(doc.due_date)}</td></tr>` : ''}
+                            ${doc.paid_date ? `<tr><td class="text-muted">收款日期</td><td class="fw-bold text-success">${fmtDate(doc.paid_date)}</td></tr>` : ''}
+                            ${doc.quotation_id ? `<tr><td class="text-muted">來源報價</td><td><a href="#/quotations/${doc.project_code}/${doc.quotation_id}">${doc.quotation_id}</a></td></tr>` : ''}
+                            <tr><td class="text-muted">狀態</td><td>${docStatusBadge(doc.status)}</td></tr>
+                            <tr><td class="text-muted">建立時間</td><td>${doc.created_at ? fmtDate(doc.created_at) : '-'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+    // Items table
+    html += `
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-container">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>描述</th>
+                                <th class="text-center">數量</th>
+                                <th class="text-center">單位</th>
+                                <th class="text-end">單價</th>
+                                <th class="text-end">金額</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        html += `
+                            <tr>
+                                <td>${i + 1}</td>
+                                <td>${item.desc || '-'}</td>
+                                <td class="text-center">${item.qty}</td>
+                                <td class="text-center">${item.unit || '項'}</td>
+                                <td class="text-end">${fmtNum(item.price)}</td>
+                                <td class="text-end fw-bold">${fmtNum(item.amount)}</td>
+                            </tr>`;
+    }
+
+    const subtotal = doc.subtotal || items.reduce((s, i) => s + (i.amount || 0), 0);
+    const taxRate = doc.tax_rate || 0;
+    const tax = doc.tax !== undefined ? doc.tax : (taxRate > 0 ? subtotal * taxRate / 100 : 0);
+
+    html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-body border-top">
+                <div class="row">
+                    <div class="col-md-6 offset-md-6">
+                        <table class="table table-sm mb-0">
+                            <tr>
+                                <td>小計</td>
+                                <td class="text-end">${fmtNum(subtotal)}</td>
+                            </tr>
+                            <tr>
+                                <td>稅率 (${taxRate}%)</td>
+                                <td class="text-end">${fmtNum(tax)}</td>
+                            </tr>
+                            <tr class="fw-bold fs-5">
+                                <td>總計</td>
+                                <td class="text-end">${doc.currency || 'HKD'} ${fmtNum(doc.total)}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+    if (doc.notes) {
+        html += `<div class="alert alert-info">${doc.notes}</div>`;
+    }
+
+    return html;
+}
+
+// ---- Quotation List (All Projects) ----
+
+async function renderQuotationList() {
+    const app = $id('app');
+    app.innerHTML = '<div class="loading-spinner"><div class="spinner-border text-primary" role="status"></div></div>';
+
+    try {
+        // Fetch projects to get all codes, then fetch quotations for each
+        const projects = await apiGet('/projects');
+        let allQuotes = [];
+
+        for (const p of projects) {
+            try {
+                const quotes = await apiGet(`/projects/${p.code}/quotations`);
+                allQuotes = allQuotes.concat(quotes.map(q => ({ ...q, project_code: p.code })));
+            } catch { /* no quotations for this project */ }
+        }
+
+        allQuotes.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+        let html = `
+            <div class="page-header d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <a href="#/" class="btn btn-outline-secondary btn-sm me-2">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                    <h4 class="d-inline"><i class="bi bi-file-text me-2 text-primary"></i>所有報價單</h4>
+                </div>
+            </div>`;
+
+        if (allQuotes.length === 0) {
+            html += `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <i class="bi bi-file-text"></i>
+                            <p>尚無報價單</p>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            // Group by project
+            const byProject = {};
+            for (const q of allQuotes) {
+                const pc = q.project_code || 'unknown';
+                if (!byProject[pc]) byProject[pc] = [];
+                byProject[pc].push(q);
+            }
+
+            let totalValue = 0;
+            let draftCount = 0;
+            for (const q of allQuotes) {
+                if (q.status === 'draft') draftCount++;
+                totalValue += q.total || 0;
+            }
+
+            html += `
+                <div class="row g-3 mb-4">
+                    <div class="col-4">
+                        <div class="stat-card stat-profit">
+                            <div class="stat-label">總報價金額</div>
+                            <div class="stat-value">${fmtNum(totalValue)}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-card stat-pending-income">
+                            <div class="stat-label">總件數</div>
+                            <div class="stat-value">${allQuotes.length}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-card" style="background:#e2e3e5;">
+                            <div class="stat-label">草稿</div>
+                            <div class="stat-value">${draftCount}</div>
+                        </div>
+                    </div>
+                </div>`;
+
+            for (const [pc, quotes] of Object.entries(byProject)) {
+                html += `<h5 class="mb-3 mt-4">
+                    <a href="#/quotations/${pc}" class="text-decoration-none">${pc}</a>
+                    <span class="badge bg-secondary ms-2">${quotes.length}</span>
+                </h5>
+                <div class="row g-4">`;
+                for (const q of quotes) {
+                    html += renderDocCard(q, 'quotations');
+                }
+                html += '</div>';
+            }
+        }
+
+        app.innerHTML = html;
+
+    } catch (err) {
+        app.innerHTML = `
+            <div class="page-header">
+                <a href="#/" class="btn btn-outline-secondary btn-sm me-2">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="d-inline">報價單</h4>
+            </div>
+            <div class="empty-state">
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                <p>載入失敗：${err.message}</p>
+                <button class="btn btn-primary mt-2" onclick="renderQuotationList()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重試
+                </button>
+            </div>`;
+    }
+}
+
+// ---- Project Quotations ----
+
+async function renderProjectQuotations(code) {
+    const app = $id('app');
+    app.innerHTML = '<div class="loading-spinner"><div class="spinner-border text-primary" role="status"></div></div>';
+
+    try {
+        const quotes = await apiGet(`/projects/${code}/quotations`);
+
+        let html = `
+            <div class="page-header d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <a href="#/quotations" class="btn btn-outline-secondary btn-sm me-2">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                    <h4 class="d-inline">${code} 報價單</h4>
+                </div>
+                <button class="btn btn-success btn-sm mt-2 mt-md-0" onclick="openQuoteModal('${code}')">
+                    <i class="bi bi-plus-lg me-1"></i>新增報價單
+                </button>
+            </div>`;
+
+        if (!quotes || quotes.length === 0) {
+            html += `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <i class="bi bi-file-text"></i>
+                            <p>尚無報價單</p>
+                            <button class="btn btn-primary mt-2" onclick="openQuoteModal('${code}')">
+                                <i class="bi bi-plus-lg me-1"></i>建立第一張報價單
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            html += '<div class="row g-4">';
+            for (const q of quotes) {
+                html += renderDocCard({ ...q, project_code: code }, 'quotations');
+            }
+            html += '</div>';
+        }
+
+        app.innerHTML = html;
+
+    } catch (err) {
+        app.innerHTML = `
+            <div class="page-header">
+                <a href="#/quotations" class="btn btn-outline-secondary btn-sm me-2">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="d-inline">報價單</h4>
+            </div>
+            <div class="empty-state">
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                <p>載入失敗：${err.message}</p>
+                <button class="btn btn-primary mt-2" onclick="renderProjectQuotations('${code}')">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重試
+                </button>
+            </div>`;
+    }
+}
+
+// ---- Quotation Detail ----
+
+async function renderQuotationDetail(code, qid) {
+    const app = $id('app');
+    app.innerHTML = '<div class="loading-spinner"><div class="spinner-border text-primary" role="status"></div></div>';
+
+    try {
+        const doc = await apiGet(`/projects/${code}/quotations/${qid}`);
+        app.innerHTML = renderDocDetail({ ...doc, project_code: code }, 'quotations');
+    } catch (err) {
+        app.innerHTML = `
+            <div class="page-header">
+                <a href="#/quotations" class="btn btn-outline-secondary btn-sm me-2">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="d-inline">報價單詳情</h4>
+            </div>
+            <div class="empty-state">
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                <p>載入失敗：${err.message}</p>
+                <button class="btn btn-primary mt-2" onclick="renderQuotationDetail('${code}','${qid}')">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重試
+                </button>
+            </div>`;
+    }
+}
+
+// ---- Invoice List (All Projects) ----
+
+async function renderInvoiceList() {
+    const app = $id('app');
+    app.innerHTML = '<div class="loading-spinner"><div class="spinner-border text-primary" role="status"></div></div>';
+
+    try {
+        const allInvoices = await apiGet('/invoices');
+        allInvoices.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+        let html = `
+            <div class="page-header d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <a href="#/" class="btn btn-outline-secondary btn-sm me-2">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                    <h4 class="d-inline"><i class="bi bi-receipt me-2 text-primary"></i>所有發票</h4>
+                </div>
+            </div>`;
+
+        if (allInvoices.length === 0) {
+            html += `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <i class="bi bi-receipt"></i>
+                            <p>尚無發票</p>
+                            <p class="text-muted small">可從報價單轉換為發票</p>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            const byProject = {};
+            let totalOutstanding = 0;
+            let totalPaid = 0;
+            for (const inv of allInvoices) {
+                const pc = inv.project_code || 'unknown';
+                if (!byProject[pc]) byProject[pc] = [];
+                byProject[pc].push(inv);
+                if (inv.status === 'paid') totalPaid += inv.total || 0;
+                else if (inv.status !== 'cancelled') totalOutstanding += inv.total || 0;
+            }
+
+            html += `
+                <div class="row g-3 mb-4">
+                    <div class="col-4">
+                        <div class="stat-card stat-income">
+                            <div class="stat-label">已收款</div>
+                            <div class="stat-value text-success">${fmtNum(totalPaid)}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-card stat-pending-income">
+                            <div class="stat-label">待收款</div>
+                            <div class="stat-value">${fmtNum(totalOutstanding)}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-card" style="background:#e2e3e5;">
+                            <div class="stat-label">總件數</div>
+                            <div class="stat-value">${allInvoices.length}</div>
+                        </div>
+                    </div>
+                </div>`;
+
+            for (const [pc, invoices] of Object.entries(byProject)) {
+                html += `<h5 class="mb-3 mt-4">
+                    <a href="#/invoices/${pc}" class="text-decoration-none">${pc}</a>
+                    <span class="badge bg-secondary ms-2">${invoices.length}</span>
+                </h5>
+                <div class="row g-4">`;
+                for (const inv of invoices) {
+                    html += renderDocCard(inv, 'invoices');
+                }
+                html += '</div>';
+            }
+        }
+
+        app.innerHTML = html;
+
+    } catch (err) {
+        app.innerHTML = `
+            <div class="page-header">
+                <a href="#/" class="btn btn-outline-secondary btn-sm me-2">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="d-inline">發票</h4>
+            </div>
+            <div class="empty-state">
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                <p>載入失敗：${err.message}</p>
+                <button class="btn btn-primary mt-2" onclick="renderInvoiceList()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重試
+                </button>
+            </div>`;
+    }
+}
+
+// ---- Project Invoices ----
+
+async function renderProjectInvoices(code) {
+    const app = $id('app');
+    app.innerHTML = '<div class="loading-spinner"><div class="spinner-border text-primary" role="status"></div></div>';
+
+    try {
+        const invoices = await apiGet(`/projects/${code}/invoices`);
+
+        let html = `
+            <div class="page-header d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <a href="#/invoices" class="btn btn-outline-secondary btn-sm me-2">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                    <h4 class="d-inline">${code} 發票</h4>
+                </div>
+            </div>`;
+
+        if (!invoices || invoices.length === 0) {
+            html += `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <i class="bi bi-receipt"></i>
+                            <p>尚無發票</p>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            html += '<div class="row g-4">';
+            for (const inv of invoices) {
+                html += renderDocCard(inv, 'invoices');
+            }
+            html += '</div>';
+        }
+
+        app.innerHTML = html;
+
+    } catch (err) {
+        app.innerHTML = `
+            <div class="page-header">
+                <a href="#/invoices" class="btn btn-outline-secondary btn-sm me-2">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="d-inline">發票</h4>
+            </div>
+            <div class="empty-state">
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                <p>載入失敗：${err.message}</p>
+                <button class="btn btn-primary mt-2" onclick="renderProjectInvoices('${code}')">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重試
+                </button>
+            </div>`;
+    }
+}
+
+// ---- Invoice Detail ----
+
+async function renderInvoiceDetail(code, iid) {
+    const app = $id('app');
+    app.innerHTML = '<div class="loading-spinner"><div class="spinner-border text-primary" role="status"></div></div>';
+
+    try {
+        const doc = await apiGet(`/projects/${code}/invoices/${iid}`);
+        app.innerHTML = renderDocDetail({ ...doc, project_code: code }, 'invoices');
+    } catch (err) {
+        app.innerHTML = `
+            <div class="page-header">
+                <a href="#/invoices" class="btn btn-outline-secondary btn-sm me-2">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="d-inline">發票詳情</h4>
+            </div>
+            <div class="empty-state">
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                <p>載入失敗：${err.message}</p>
+                <button class="btn btn-primary mt-2" onclick="renderInvoiceDetail('${code}','${iid}')">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重試
+                </button>
+            </div>`;
+    }
+}
+
+// ---- Actions ----
+
+// Quotation Modal
+let quoteModalInstance = null;
+
+function openQuoteModal(code) {
+    $id('quoteModalTitle').textContent = `新增報價單 - ${code}`;
+    $id('quoteProjectCode').value = code;
+    $id('quoteClientName').value = '';
+    $id('quoteContact').value = '';
+    $id('quoteEmail').value = '';
+    $id('quotePhone').value = '';
+    $id('quoteCurrency').value = 'HKD';
+    $id('quoteTaxRate').value = '0';
+    $id('quoteValidUntil').value = '';
+
+    // Reset items to one empty row
+    $id('quoteItems').innerHTML = `
+        <div class="row g-2 quote-item mb-2">
+            <div class="col-4">
+                <input type="text" class="form-control form-control-sm" placeholder="描述" name="itemDesc">
+            </div>
+            <div class="col-2">
+                <input type="number" class="form-control form-control-sm" placeholder="數量" name="itemQty" value="1" min="1">
+            </div>
+            <div class="col-2">
+                <input type="text" class="form-control form-control-sm" placeholder="單位" name="itemUnit" value="項">
+            </div>
+            <div class="col-3">
+                <input type="number" step="0.01" class="form-control form-control-sm" placeholder="單價" name="itemPrice">
+            </div>
+            <div class="col-1">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.quote-item').remove()"><i class="bi bi-x"></i></button>
+            </div>
+        </div>`;
+
+    if (!quoteModalInstance) quoteModalInstance = new bootstrap.Modal($id('quoteModal'));
+    quoteModalInstance.show();
+}
+
+function addQuoteItem() {
+    const div = document.createElement('div');
+    div.className = 'row g-2 quote-item mb-2';
+    div.innerHTML = `
+        <div class="col-4">
+            <input type="text" class="form-control form-control-sm" placeholder="描述" name="itemDesc">
+        </div>
+        <div class="col-2">
+            <input type="number" class="form-control form-control-sm" placeholder="數量" name="itemQty" value="1" min="1">
+        </div>
+        <div class="col-2">
+            <input type="text" class="form-control form-control-sm" placeholder="單位" name="itemUnit" value="項">
+        </div>
+        <div class="col-3">
+            <input type="number" step="0.01" class="form-control form-control-sm" placeholder="單價" name="itemPrice">
+        </div>
+        <div class="col-1">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.quote-item').remove()"><i class="bi bi-x"></i></button>
+        </div>`;
+    $id('quoteItems').appendChild(div);
+}
+
+async function saveQuotation() {
+    const code = $id('quoteProjectCode').value;
+
+    const client = {
+        name: $id('quoteClientName').value,
+        contact: $id('quoteContact').value,
+        email: $id('quoteEmail').value,
+        phone: $id('quotePhone').value,
+    };
+
+    const itemEls = $id('quoteItems').querySelectorAll('.quote-item');
+    const items = [];
+    for (const el of itemEls) {
+        const desc = el.querySelector('[name="itemDesc"]').value;
+        const qty = parseInt(el.querySelector('[name="itemQty"]').value) || 0;
+        const unit = el.querySelector('[name="itemUnit"]').value || '項';
+        const price = parseFloat(el.querySelector('[name="itemPrice"]').value) || 0;
+        if (desc && qty > 0 && price > 0) {
+            items.push({ desc, qty, unit, price, amount: qty * price });
+        }
+    }
+
+    if (items.length === 0) {
+        alert('請至少填寫一個有效的項目');
+        return;
+    }
+
+    const payload = {
+        client,
+        items,
+        currency: $id('quoteCurrency').value,
+        tax_rate: parseFloat($id('quoteTaxRate').value) || 0,
+        valid_until: $id('quoteValidUntil').value,
+    };
+
+    try {
+        await apiPost(`/projects/${code}/quotations`, payload);
+        quoteModalInstance.hide();
+        // Refresh the current view
+        navigate(window.location.hash);
+    } catch (err) {
+        alert('建立失敗：' + err.message);
+    }
+}
+
+// Update document status (quotation or invoice)
+async function updateDocStatus(code, id, type, status) {
+    const payload = { status };
+    if (status === 'paid') {
+        payload.paid_date = new Date().toISOString().split('T')[0];
+    }
+    try {
+        await apiPut(`/projects/${code}/${type}/${id}`, payload);
+        navigate(window.location.hash);
+    } catch (err) {
+        alert('更新失敗：' + err.message);
+    }
+}
+
+// Convert quotation to invoice
+async function convertToInvoice(code, qid) {
+    if (!confirm(`確定將 ${qid} 轉換為發票？`)) return;
+    try {
+        await apiPost(`/projects/${code}/quotations/${qid}/convert`, {});
+        alert(`✅ 已轉換為發票`);
+        navigate(window.location.hash);
+    } catch (err) {
+        alert('轉換失敗：' + err.message);
+    }
+}
+
+// Mark invoice as paid
+async function markPaid(code, iid) {
+    const date = prompt('請輸入收款日期 (YYYY-MM-DD)：', new Date().toISOString().split('T')[0]);
+    if (!date) return;
+    try {
+        await apiPut(`/projects/${code}/invoices/${iid}`, { status: 'paid', paid_date: date });
+        navigate(window.location.hash);
+    } catch (err) {
+        alert('操作失敗：' + err.message);
+    }
+}
+
+// Delete document
+async function deleteDoc(code, id, type) {
+    if (!confirm(`確定刪除 ${id}？此操作無法復原。`)) return;
+    try {
+        await apiDelete(`/projects/${code}/${type}/${id}`);
+        navigate(`#/${type}`);
+    } catch (err) {
+        alert('刪除失敗：' + err.message);
+    }
+}
+
+// ---- Transaction Modal Operations ----
+
+// ---- Claim Form ----
+
+function renderClaimForm() {
+    const main = $id('mainContent');
+    main.innerHTML = `
+    <style>
+      .claim-form { max-width: 900px; margin: 0 auto; }
+      .claim-header { border-bottom: 3px solid #1a3a5c; padding-bottom: 16px; margin-bottom: 24px; }
+      .claim-header h2 { font-weight: 700; color: #1a3a5c; letter-spacing: 0.03em; }
+      .claim-section { border: 1px solid #dee2e6; border-radius: 12px; padding: 24px; margin-bottom: 24px; background: #fff; }
+      .claim-section h5 { font-weight: 600; color: #1a3a5c; border-left: 4px solid #1a3a5c; padding-left: 12px; margin-bottom: 20px; }
+      .claim-table { font-size: 0.9rem; }
+      .claim-table th { background: #f0f4f8; font-weight: 600; }
+      .claim-total { background: #f8fafc; font-weight: 700; font-size: 1.1rem; }
+      .claim-total td { border-top: 2px solid #1a3a5c !important; }
+      .receipt-preview { max-width: 120px; max-height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid #dee2e6; }
+      .print-layout { display: none; }
+      @media print {
+        .no-print { display: none !important; }
+        .print-layout { display: block !important; }
+        .claim-section { border: 1px solid #ccc !important; box-shadow: none !important; }
+        body { background: white !important; }
+      }
+    </style>
+    <div class="claim-form">
+      <div class="d-flex justify-content-between align-items-start claim-header">
+        <div>
+          <span class="badge bg-secondary mb-2" style="letter-spacing:0.1em;">08/ CLAIM RECORD</span>
+          <h2><i class="bi bi-file-earmark-text me-2"></i>Claim Form</h2>
+        </div>
+        <div class="no-print">
+          <button class="btn btn-outline-secondary me-2" onclick="window.print()"><i class="bi bi-printer me-1"></i>列印</button>
+          <button class="btn btn-primary" onclick="submitClaim()"><i class="bi bi-send me-1"></i>提交</button>
+        </div>
+      </div>
+
+      <!-- Project Info -->
+      <div class="claim-section">
+        <h5>01/ Projects</h5>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Project Name</label>
+            <select class="form-select" id="claimProject">
+              <option value="">Select Project...</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Claim Date</label>
+            <input type="date" class="form-control" id="claimDate">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Claim Ref #</label>
+            <input type="text" class="form-control" id="claimRef" placeholder="e.g. CLM-2026-001">
+          </div>
+        </div>
+        <div class="row g-3 mt-2">
+          <div class="col-md-6">
+            <label class="form-label">Claimant Name</label>
+            <input type="text" class="form-control" id="claimantName" placeholder="e.g. Peony">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Currency</label>
+            <select class="form-select" id="claimCurrency">
+              <option value="HKD" selected>HKD</option>
+              <option value="USD">USD</option>
+              <option value="CNY">CNY</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="claimStatus">
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="paid">Paid</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Line Items -->
+      <div class="claim-section">
+        <h5>02/ Items</h5>
+        <div class="table-responsive">
+          <table class="table claim-table" id="itemsTable">
+            <thead>
+              <tr>
+                <th style="width:40px">#</th>
+                <th>Description</th>
+                <th style="width:120px">Category</th>
+                <th style="width:80px">Qty</th>
+                <th style="width:130px">Unit Price</th>
+                <th style="width:130px">Amount</th>
+                <th style="width:40px" class="no-print"></th>
+              </tr>
+            </thead>
+            <tbody id="itemsBody">
+            </tbody>
+            <tfoot>
+              <tr class="claim-total">
+                <td colspan="5" class="text-end">Total</td>
+                <td id="claimTotalAmount">0.00</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <button class="btn btn-sm btn-outline-primary no-print" onclick="addItem()"><i class="bi bi-plus-lg me-1"></i>Add Item</button>
+      </div>
+
+      <!-- Receipt Photos -->
+      <div class="claim-section no-print">
+        <h5>03/ Supporting Documents</h5>
+        <p class="text-muted small">Upload receipt photos or scanned documents</p>
+        <input type="file" class="form-control mb-3" id="receiptFiles" accept="image/*,application/pdf" multiple onchange="previewReceipts()">
+        <div class="d-flex flex-wrap gap-2" id="receiptPreview"></div>
+      </div>
+
+      <!-- Notes -->
+      <div class="claim-section no-print">
+        <h5>04/ Notes</h5>
+        <textarea class="form-control" id="claimNotes" rows="3" placeholder="Any additional notes..."></textarea>
+      </div>
+    </div>
+    `;
+
+    // Load projects into dropdown
+    apiGet('/projects').then(projects => {
+      const sel = $id('claimProject');
+      projects.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.code;
+        opt.textContent = p.name;
+        sel.appendChild(opt);
+      });
+    }).catch(() => {});
+
+    // Set default date
+    $id('claimDate').valueAsDate = new Date();
+
+    // Add first empty row
+    addItem();
+}
+
+let itemCounter = 0;
+function addItem() {
+  itemCounter++;
+  const tbody = $id('itemsBody');
+  const row = document.createElement('tr');
+  row.id = 'itemRow_' + itemCounter;
+  row.innerHTML = \`
+    <td class="text-muted">\${itemCounter}</td>
+    <td><input type="text" class="form-control form-control-sm item-desc" placeholder="Description"></td>
+    <td>
+      <select class="form-select form-select-sm item-cat">
+        <option value="">Select</option>
+        <option value="transport">Transport</option>
+        <option value="meals">Meals</option>
+        <option value="materials">Materials</option>
+        <option value="printing">Printing</option>
+        <option value="venue">Venue</option>
+        <option value="supplies">Supplies</option>
+        <option value="other">Other</option>
+      </select>
+    </td>
+    <td><input type="number" class="form-control form-control-sm item-qty" value="1" min="1" onchange="calcRow(this)" oninput="calcRow(this)"></td>
+    <td><input type="number" class="form-control form-control-sm item-price" step="0.01" min="0" placeholder="0.00" onchange="calcRow(this)" oninput="calcRow(this)"></td>
+    <td><input type="number" class="form-control form-control-sm item-amount" step="0.01" readonly style="background:#f8f9fa;font-weight:600;"></td>
+    <td class="no-print"><button class="btn btn-sm btn-outline-danger" onclick="removeItem(this)"><i class="bi bi-x"></i></button></td>
+  \`;
+  tbody.appendChild(row);
+  updateTotal();
+}
+
+function removeItem(btn) {
+  btn.closest('tr').remove();
+  updateTotal();
+}
+
+function calcRow(el) {
+  const row = el.closest('tr');
+  const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+  const price = parseFloat(row.querySelector('.item-price').value) || 0;
+  const amt = qty * price;
+  row.querySelector('.item-amount').value = amt.toFixed(2);
+  updateTotal();
+}
+
+function updateTotal() {
+  let total = 0;
+  document.querySelectorAll('.item-amount').forEach(el => {
+    total += parseFloat(el.value) || 0;
+  });
+  $id('claimTotalAmount').textContent = total.toFixed(2);
+}
+
+function previewReceipts() {
+  const files = $id('receiptFiles').files;
+  const container = $id('receiptPreview');
+  container.innerHTML = '';
+  for (const f of files) {
+    if (f.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const wrap = document.createElement('div');
+        wrap.style.position = 'relative';
+        wrap.innerHTML = \`<img src="\${e.target.result}" class="receipt-preview"><br><small class="text-muted">\${f.name}</small>\`;
+        container.appendChild(wrap);
+      };
+      reader.readAsDataURL(f);
+    } else {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = \`<div class="p-3 border rounded text-center"><i class="bi bi-file-pdf fs-1 text-danger"></i><br><small>\${f.name}</small></div>\`;
+      container.appendChild(wrap);
+    }
+  }
+}
+
+async function submitClaim() {
+  const project = $id('claimProject').value;
+  const date = $id('claimDate').value;
+  const ref = $id('claimRef').value;
+  const claimant = $id('claimantName').value;
+  const currency = $id('claimCurrency').value;
+  const status = $id('claimStatus').value;
+  const notes = $id('claimNotes').value;
+
+  if (!project || !claimant) {
+    alert('Please select a project and enter claimant name.');
+    return;
+  }
+
+  // Gather items
+  const items = [];
+  document.querySelectorAll('#itemsBody tr').forEach(row => {
+    const desc = row.querySelector('.item-desc')?.value;
+    const cat = row.querySelector('.item-cat')?.value;
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const price = parseFloat(row.querySelector('.item-price')?.value) || 0;
+    if (desc && desc.trim()) {
+      items.push({ description: desc.trim(), category: cat, qty, unit_price: price, amount: qty * price });
+    }
+  });
+
+  if (items.length === 0) {
+    alert('Please add at least one item.');
+    return;
+  }
+
+  const total = items.reduce((s, i) => s + i.amount, 0);
+
+  // Build form data
+  const formData = new FormData();
+  formData.append('project', project);
+  formData.append('date', date);
+  formData.append('ref', ref);
+  formData.append('claimant', claimant);
+  formData.append('currency', currency);
+  formData.append('status', status);
+  formData.append('notes', notes);
+  formData.append('items', JSON.stringify(items));
+  formData.append('total', total.toFixed(2));
+
+  // Attach receipt files
+  const fileInput = $id('receiptFiles');
+  for (const f of fileInput.files) {
+    formData.append('receipts', f);
+  }
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Submitting...';
+
+  try {
+    const res = await fetch(API_BASE + '/claim/submit', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
+      throw new Error(err.error || 'Submission failed');
+    }
+    const result = await res.json();
+    alert(\`✅ Claim submitted successfully!\nTotal: \${currency} \${total.toFixed(2)}\nTransactions created: \${result.transactions_created}\nPDF: \${result.pdf || 'Generated'}\`);
+    navigate('#/project/' + encodeURIComponent(project));
+  } catch (err) {
+    alert('❌ Submission failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-send me-1"></i>Submit';
+  }
+}
+// ---- End Claim Form ----
 
 let txModal = null;
 let deleteModal = null;
@@ -935,7 +2002,6 @@ function openAddModal(code) {
 }
 
 function openEditModal(code, index) {
-    // We need to find the transaction data - fetch project detail
     apiGet(`/projects/${code}`).then(project => {
         const tx = project.transactions[index];
         if (!tx) return;
@@ -997,14 +2063,12 @@ async function saveTransaction() {
     const editIndex = $id('editIndex').value;
     const data = getFormData();
 
-    // Validate
     if (!data['日期'] || !data['金額']) {
         alert('請填寫日期和金額');
         return;
     }
 
     try {
-        // Upload file first if selected
         const fileInput = $id('txFile');
         if (fileInput.files && fileInput.files.length > 0) {
             const result = await apiUploadFile(code, fileInput.files[0]);
@@ -1076,7 +2140,6 @@ async function ocrInvoice() {
         }
         const data = await res.json();
 
-        // Auto-fill form fields
         if (data.date) $id('txDate').value = data.date;
         if (data.amount) $id('txAmount').value = data.amount;
         if (data.currency) $id('txCurrency').value = data.currency;

@@ -1,0 +1,86 @@
+{
+  "trades": [
+    {
+      "id": 1,
+      "symbol": "2330.TW",
+      "action": "buy",
+      "shares": 1,
+      "price": 2250.0,
+      "date": "2026-05-06",
+      "note": "auto: 0.80 conf 80%"
+    },
+    {
+      "id": 2,
+      "symbol": "2882.TW",
+      "action": "buy",
+      "shares": 12,
+      "price": 78.7,
+      "date": "2026-05-06",
+      "note": "auto: 0.65 conf 65%"
+    },
+    {
+      "id": 3,
+      "symbol": "2882.TW",
+      "action": "buy",
+      "shares": 12,
+      "price": 78.7,
+      "date": "2026-05-06",
+      "note": "auto: 0.65 conf 65%"
+    },
+    {
+      "id": 4,
+      "symbol": "2382.TW",
+      "action": "buy",
+      "shares": 2,
+      "price": 346.5,
+      "date": "2026-05-07",
+      "note": "auto: 0.42 conf 67%"
+    },
+    {
+      "id": 5,
+      "symbol": "2881.TW",
+      "action": "buy",
+      "shares": 10,
+      "price": 92.8,
+      "date": "2026-05-07",
+      "note": "auto: 0.65 conf 65%"
+    },
+    {
+      "id": 6,
+      "symbol": "2882.TW",
+      "action": "buy",
+      "shares": 12,
+      "price": 78.7,
+      "date": "2026-05-07",
+      "note": "auto: 0.81 conf 81%"
+    },
+    {
+      "id": 7,
+      "symbol": "2303.TW",
+      "action": "buy",
+      "shares": 10,
+      "price": 96.5,
+      "date": "2026-05-08",
+      "note": "auto: 0.63 conf 63%"
+    },
+    {
+      "id": 8,
+      "symbol": "2881.TW",
+      "action": "buy",
+      "shares": 10,
+      "price": 94.5,
+      "date": "2026-05-08",
+      "note": "auto: 0.81 conf 81%"
+    },
+    {
+      "id": 9,
+      "symbol": "2882.TW",
+      "action": "buy",
+      "shares": 12,
+      "price": 79.0,
+      "date": "2026-05-08",
+      "note": "auto: 0.67 conf 67%"
+    }
+  ],
+  "next_id": 10
+}

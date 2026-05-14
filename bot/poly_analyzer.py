@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 
@@ -197,9 +198,10 @@ def get_ai_recommendations(api_key: str, top_n: int = 5) -> str:
    建議：資金的 [X]%"""
 
     try:
-        client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+        base_url = os.environ.get("OPENAI_BASE_URL", None)
+        client = openai.OpenAI(api_key=api_key, base_url=base_url)
         response = client.chat.completions.create(
-            model=constants.DEEPSEEK_MODEL,
+            model=constants.API_MODEL,
             max_tokens=constants.POLYMARKET_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -217,19 +219,19 @@ def get_ai_recommendations(api_key: str, top_n: int = 5) -> str:
         return header + analysis + footer
 
     except AuthenticationError as e:
-        logger.error(f"DeepSeek API 金鑰驗證失敗: {e}")
-        return "AI 分析失敗：API 金鑰無效或已過期。請檢查 DEEPSEEK_API_KEY 環境變數。"
+        logger.error(f"AI API 金鑰驗證失敗: {e}")
+        return "AI 分析失敗：API 金鑰無效或已過期。請檢查 API 金鑰環境變數。"
     except RateLimitError as e:
-        logger.error(f"DeepSeek API 請求頻率超限: {e}")
+        logger.error(f"AI API 請求頻率超限: {e}")
         return "AI 分析失敗：API 請求頻率超限，請稍後再試。"
     except APIConnectionError as e:
-        logger.error(f"無法連線到 DeepSeek API: {e}")
+        logger.error(f"無法連線到 AI API: {e}")
         return "AI 分析失敗：無法連線到 AI 服務，請檢查網路連線。"
     except APITimeoutError as e:
-        logger.error(f"DeepSeek API 請求超時: {e}")
+        logger.error(f"AI API 請求超時: {e}")
         return "AI 分析失敗：AI 服務回應超時，請稍後再試。"
     except APIError as e:
-        logger.error(f"DeepSeek API 錯誤: {e}")
+        logger.error(f"AI API 錯誤: {e}")
         return f"AI 分析失敗：AI 服務發生錯誤 (狀態碼: {e.status_code if hasattr(e, 'status_code') else '未知'})。"
     except Exception as e:
         logger.error(f"AI 分析發生未預期錯誤: {e}")

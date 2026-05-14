@@ -23,6 +23,9 @@ from quant.backtest.strategies import (
     RSIStrategy,
     MACDStrategy,
     CombinedStrategy,
+    TrendFollowingStrategy,
+    GridRecoveryStrategy,
+    VolatilityBreakoutStrategy,
     create_strategy
 )
 from quant.backtest.analyzer import PerformanceAnalyzer
@@ -83,6 +86,22 @@ class NightlyBacktestEngine:
                 "name": "Combined_Strategy",
                 "class": CombinedStrategy,
                 "params": {"ma_fast": 5, "ma_slow": 20, "rsi_period": 14}
+            },
+            # Web3 / Crypto 策略
+            {
+                "name": "Trend_Following_12_26",
+                "class": TrendFollowingStrategy,
+                "params": {"fast_period": 12, "slow_period": 26, "adx_threshold": 25.0}
+            },
+            {
+                "name": "Grid_Recovery_BB",
+                "class": GridRecoveryStrategy,
+                "params": {"bb_period": 20, "bb_std": 2.5, "rsi_oversold": 25, "rsi_overbought": 75}
+            },
+            {
+                "name": "Volatility_Breakout",
+                "class": VolatilityBreakoutStrategy,
+                "params": {"lookback": 20, "atr_multiplier": 1.5, "atr_period": 14}
             }
         ]
 
@@ -111,7 +130,7 @@ class NightlyBacktestEngine:
 
         # 如果沒有找到，使用默認清單
         if not symbols:
-            default_symbols = ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "2330.TW", "2317.TW"]
+            default_symbols = ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "2330.TW", "2317.TW", "COIN", "MSTR", "BITO", "RIOT", "CLSK"]
             symbols = default_symbols
             logger.warning(f"使用默認觀察清單: {len(symbols)} 個標的")
 

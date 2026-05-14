@@ -1,6 +1,9 @@
+import json
 import subprocess
 from pathlib import Path
 from typing import Optional
+
+import httpx
 
 ALLOWED_ROOT = Path("/Users/aitree414")
 ALLOWED_COMMANDS = frozenset({
@@ -97,10 +100,67 @@ def read_file(path: str) -> str:
     err = _check_path(path)
     if err:
         return err
+    p = Path(path)
+    if not p.exists():
+        return f"找不到檔案：{path}"
     try:
-        return Path(path).read_text(encoding="utf-8")
+        # Handle different file types
+        suffix = p.suffix.lower()
+
+        # PDF files — extract text with pypdf + OCR fallback
+        if suffix == ".pdf":
+            try:
+                import io, pypdf
+                reader = pypdf.PdfReader(io.BytesIO(p.read_bytes()))
+                pages = [page.extract_text() or "" for page in reader.pages]
+                text = "\n\n".join(pages)
+                if text.strip():
+                    total = len(reader.pages)
+                    return text[:8000] + (f"\n\n...（共 {total} 頁，顯示前 8000 字元）" if len(text) > 8000 else "")
+                # OCR fallback for scanned PDFs
+                try:
+                    from pdf2image import convert_from_bytes
+                    import pytesseract
+                    images = convert_from_bytes(p.read_bytes(), dpi=300)
+                    ocr = [f"--- 第 {i+1} 頁 ---\n{pytesseract.image_to_string(img, lang='eng+chi_tra').strip()}" for i, img in enumerate(images)]
+                    return "\n\n".join(ocr)[:8000]
+                except ImportError:
+                    return "此 PDF 無文字層（掃描檔），需安裝 pdf2image+pytesseract 才能 OCR。"
+            except ImportError:
+                return "需安裝 pypdf 才能讀取 PDF：pip install pypdf"
+            except Exception as e:
+                return f"PDF 讀取失敗：{e}"
+
+        # JSON — pretty-print
+        if suffix in (".json", ".jsonl"):
+            try:
+                data = json.loads(p.read_text("utf-8"))
+                return json.dumps(data, ensure_ascii=False, indent=2)[:8000]
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass  # fall through to raw text
+
+        # CSV / TSV
+        if suffix in (".csv", ".tsv"):
+            import csv, io
+            try:
+                dialect = "excel-tab" if suffix == ".tsv" else "excel"
+                rows = list(csv.reader(io.StringIO(p.read_text("utf-8")), dialect=dialect))
+                if rows:
+                    col_widths = [max(len(str(r[i])) for r in rows if i < len(r)) for i in range(len(rows[0]))] if rows else []
+                    lines = ["  ".join(f"{str(r[i]):{col_widths[i]}s}" if i < len(col_widths) else str(r[i]) for i in range(len(r))) for r in rows]
+                    return "\n".join(lines[:200]) + (f"\n\n...（共 {len(rows)} 行）" if len(rows) > 200 else "")
+            except Exception:
+                pass  # fall through
+
+        # Try UTF-8 text
+        return p.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return Path(path).read_bytes().decode("latin-1")
+        # Binary file — return file info instead of garbled content
+        try:
+            size = p.stat().st_size
+            return f"[二進位檔案] {p.name} ({size:,} bytes)\n此檔案非純文字格式。如需分析，請直接上傳檔案。"
+        except Exception:
+            return f"[二進位檔案] 無法讀取爲文字。"
     except FileNotFoundError:
         return f"找不到檔案：{path}"
     except Exception as e:
@@ -154,6 +214,75 @@ def run_command(command: str, authorized: bool = False) -> str:
         return f"執行錯誤：{e}"
 
 
+def fetch_webpage(url: str, max_length: int = 8000, cookies: str = "") -> str:
+    """Fetch and extract text content from a URL.
+
+    Automatically uses stored cookies for the domain (see ``/cookies`` command).
+    Also accepts an optional inline cookie string for one-time use.
+
+    Parameters
+    ----------
+    url : str
+        The URL to fetch (must be http/https).
+    max_length : int
+        Max characters to return (default 8000).
+    cookies : str
+        Optional. Inline cookies in ``name=value; name2=value2`` format.
+        These are merged on top of any stored cookies for the domain.
+
+    Returns
+    -------
+    str — page text content or error message.
+    """
+    if not url.startswith(("http://", "https://")):
+        return "錯誤：只支援 http/https URL。"
+    try:
+        # Auto-load stored cookies for this domain
+        from urllib.parse import urlparse
+        from .cookie_store import get_cookies
+        domain = urlparse(url).hostname or ""
+        cookie_dict = get_cookies(domain)
+        # Merge inline cookies on top
+        if cookies:
+            for pair in cookies.split(";"):
+                pair = pair.strip()
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    cookie_dict[k.strip()] = v.strip()
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            ),
+        }
+        resp = httpx.get(
+            url, timeout=15, follow_redirects=True,
+            headers=headers, cookies=cookie_dict or None,
+        )
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "text/html" in content_type or "application/json" in content_type:
+            text = resp.text
+        else:
+            text = resp.content.decode("utf-8", errors="replace")
+        # Basic HTML tag stripping for readability
+        import re
+        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > max_length:
+            text = text[:max_length] + f"\n...(截斷，全文 {len(text)} 字元)"
+        return text or "（頁面無文字內容）"
+    except httpx.TimeoutException:
+        return "錯誤：連線逾時"
+    except httpx.HTTPStatusError as e:
+        return f"錯誤：HTTP {e.response.status_code}"
+    except Exception as e:
+        return f"錯誤：{e}"
+
+
 def write_file(path: str, content: str, authorized: bool = False) -> str:
     if not authorized:
         return "無權寫入檔案，只有授權用戶可以使用此功能。"
@@ -178,6 +307,12 @@ def execute_tool(name: str, inputs: dict, authorized: bool = False) -> str:
         return run_command(inputs["command"], authorized=authorized)
     if name == "write_file":
         return write_file(inputs["path"], inputs["content"], authorized=authorized)
+    if name == "fetch_webpage":
+        return fetch_webpage(
+            inputs["url"],
+            inputs.get("max_length", 8000),
+            inputs.get("cookies", ""),
+        )
     return f"未知工具：{name}"
 
 
@@ -215,6 +350,22 @@ OPENAI_TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {"command": {"type": "string", "description": "bash 指令"}},
                 "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_webpage",
+            "description": "取得公開網頁的文字內容。回傳純文字（已移除 HTML 標籤），最多 8000 字元。自動使用該網域已儲存的 cookies（可用 /cookies 指令管理）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "要讀取的網址（http/https）"},
+                    "max_length": {"type": "integer", "description": "回傳最大字元數，預設 8000"},
+                    "cookies": {"type": "string", "description": "選用。臨時 cookies，格式 name=value; name2=value2。會與已儲存的 cookies 合併。"},
+                },
+                "required": ["url"],
             },
         },
     },
@@ -261,6 +412,19 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {"command": {"type": "string", "description": "bash 指令"}},
             "required": ["command"],
+        },
+    },
+    {
+        "name": "fetch_webpage",
+        "description": "取得公開網頁的文字內容。回傳純文字（已移除 HTML 標籤），最多 8000 字元。自動使用該網域已儲存的 cookies。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "要讀取的網址（http/https）"},
+                "max_length": {"type": "integer", "description": "回傳最大字元數，預設 8000"},
+                "cookies": {"type": "string", "description": "選用。臨時 cookies，格式 name=value; name2=value2。"},
+            },
+            "required": ["url"],
         },
     },
     {

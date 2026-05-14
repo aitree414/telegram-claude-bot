@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime
 
+import openai
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -16,11 +17,14 @@ from .watchlist import WatchlistManager
 from .portfolio import PortfolioManager
 from .session_manager import get_session_manager, TaskType
 from .task_tracker import get_task_tracker, TaskType as TrackerTaskType, TaskStatus
+from .tools import fetch_webpage
 from analysis.stock_analyzer import analyze_stock
 from analysis.persona_agents import PERSONA_NAMES
 from manager.portfolio_manager_agent import PortfolioManagerAgent
 from manager.portfolio_risk import PortfolioRiskManager
 from manager.real_trader_bridge import TokenMapper
+from manager.polymarket_trader import PolymarketTrader
+from manager.copy_trader import CopyTrader
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +159,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/poly - Polymarket 熱門市場\n"
         "/poly <關鍵字> - 搜尋\n"
         "/poly_pick - AI 推薦\n"
+        "/fetch <url> — 讀取網頁內容\n"
+        "/cookies — 管理網站登入 cookies\n"
+        "/polymarket - Polymarket 自動交易狀態\n"
+        "/polymarket on - 啟用\n"
+        "/polymarket off - 停用\n"
+        "/polymarket scan - 立即掃描\n"
+        "/copy - 複製交易狀態\n"
+        "/copy on - 啟用\n"
+        "/copy off - 停用\n"
+        "/copy leaders - 跟隨錢包\n"
         "\n"
         "🤖 自動化：\n"
         "/autotrade - 自動交易狀態\n"
@@ -279,6 +293,12 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         # Record task after successful response
         await record_conversation_task(update.effective_user.id, session_id)
+    except openai.RateLimitError:
+        logger.error("today: AI API rate limited")
+        await update.message.reply_text("AI 服務忙碌中，請稍候再試。")
+    except openai.AuthenticationError:
+        logger.error("today: AI API key invalid")
+        await update.message.reply_text("AI 服務認證失敗，請通知管理員。")
     except Exception:
         logger.exception("today_command failed")
         await update.message.reply_text("發生錯誤，請稍後再試。")
@@ -300,6 +320,50 @@ async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except Exception:
         logger.exception("files_command failed")
         await update.message.reply_text("發生錯誤，請稍後再試。")
+
+
+async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Check bot health: AI API connectivity."""
+    await update.message.chat.send_action("typing")
+    try:
+        # Quick API test with a minimal completion
+        claude: ClaudeClient = context.bot_data["claude"]
+        reply, session_id = claude.chat_with_auto_session(
+            update.effective_user.id,
+            "請只用一個字回應：OK",
+        )
+        # Also check PM2 status
+        import subprocess
+        pm2_out = subprocess.run(
+            ["pm2", "list"], capture_output=True, text=True, timeout=5
+        ).stdout
+        status_lines = []
+        for line in pm2_out.split("\n"):
+            if "online" in line or "errored" in line or "stopped" in line:
+                parts = line.split("│")
+                if len(parts) >= 3:
+                    name = parts[1].strip()
+                    status = parts[7].strip() if len(parts) > 7 else "?"
+                    status_lines.append(f"  {name}: {status}")
+
+        services = "\n".join(status_lines) if status_lines else "  (讀取中)"
+
+        await update.message.reply_text(
+            f"✅ *系統健康檢查*\n\n"
+            f"🤖 AI 服務: 正常\n"
+            f"📊 服務狀態:\n{services}\n\n"
+            f"使用 /help 查看可用指令",
+            parse_mode="Markdown",
+        )
+    except openai.RateLimitError:
+        await update.message.reply_text("⚠️ AI API 速率受限，請稍候再試。")
+    except openai.AuthenticationError:
+        await update.message.reply_text("❌ AI API Key 無效或已過期，請通知管理員更新。")
+    except openai.APIConnectionError:
+        await update.message.reply_text("❌ AI API 連線失敗，請檢查網路。")
+    except Exception as e:
+        logger.exception("health_command failed")
+        await update.message.reply_text(f"❌ 系統異常: {e}")
 
 
 async def analysis_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -614,7 +678,7 @@ async def poly_pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await update.message.chat.send_action("typing")
     await update.message.reply_text("正在分析 Polymarket 市場，請稍候（約 15 秒）...")
     mode = context.args[0].lower() if context.args else "ai"
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
     if mode == "quick":
         result = get_quick_picks(api_key)
     else:
@@ -625,6 +689,218 @@ async def poly_pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await record_task_from_text(update.effective_user.id, update.message.text, result)
     except Exception as e:
         logger.error(f"Failed to record poly_pick command task: {e}")
+
+
+async def polymarket_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Polymarket auto-trader control and status."""
+    trader: PolymarketTrader = context.bot_data.get("polymarket_trader")
+    if not trader:
+        trader = PolymarketTrader()
+        context.bot_data["polymarket_trader"] = trader
+
+    args = context.args or []
+
+    if args and args[0].lower() == "on":
+        trader.enable()
+        await update.message.reply_text("🟢 Polymarket 自動交易已啟用")
+        return
+
+    if args and args[0].lower() == "off":
+        trader.disable()
+        await update.message.reply_text("🔴 Polymarket 自動交易已停用")
+        return
+
+    if args and args[0].lower() == "dry":
+        new_mode = not trader.is_dry_run
+        trader.set_dry_run(new_mode)
+        mode_label = "🧪 模擬（不下單）" if new_mode else "⚡ 真實交易"
+        await update.message.reply_text(f"Polymarket 交易模式已切換為：{mode_label}")
+        return
+
+    if args and args[0].lower() == "scan":
+        await update.message.reply_text("🔍 正在掃描 Polymarket 市場，請稍候...")
+        try:
+            result = trader.run_cycle()
+            msg = result.summary()
+        except Exception as e:
+            logger.exception("Polymarket scan failed")
+            msg = f"❌ 掃描失敗：{e}"
+        await update.message.reply_text(msg)
+        return
+
+    # Default: show status
+    await update.message.reply_text(trader.status_text())
+
+
+# =====================================================================
+# Phase 3b — Polymarket Copy Trading (/copy)
+# =====================================================================
+
+async def copy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Copy trading control and status."""
+    copy_trader = context.bot_data.get("copy_trader")
+    if not copy_trader:
+        await update.message.reply_text(
+            "複製交易系統未初始化。\n\n"
+            "需要設定 POLYGONSCAN_API_KEY 和 POLYCOPY_ENABLED=true"
+        )
+        return
+
+    args = context.args or []
+
+    if args and args[0].lower() == "on":
+        copy_trader.enable()
+        await update.message.reply_text("🟢 複製交易已啟用")
+        return
+
+    if args and args[0].lower() == "off":
+        copy_trader.disable()
+        await update.message.reply_text("🔴 複製交易已停用")
+        return
+
+    if args and args[0].lower() == "leaders":
+        leaders = copy_trader.config.leaders
+        if not leaders:
+            await update.message.reply_text("尚未設定跟隨錢包（POLYCOPY_LEADERS）。")
+            return
+        lines = ["👤 跟隨錢包清單：\n"]
+        for i, addr in enumerate(leaders, 1):
+            lines.append(f"{i}. `{addr}`")
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    # Default: show status
+    await update.message.reply_text(copy_trader.status_text())
+
+
+# =====================================================================
+# Web Fetching (/fetch)
+# =====================================================================
+
+async def fetch_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fetch and display text content from a URL."""
+    if not context.args:
+        await update.message.reply_text("用法：/fetch <網址>\n\n例如：/fetch https://example.com")
+        return
+
+    url = context.args[0]
+    if not url.startswith(("http://", "https://")):
+        await update.message.reply_text("❌ 只支援 http/https 網址。")
+        return
+
+    # Check for --cookies flag
+    cookies = ""
+    remaining_args = [url]
+    i = 1
+    while i < len(context.args):
+        if context.args[i] == "--cookies" and i + 1 < len(context.args):
+            cookies = context.args[i + 1]
+            i += 2
+        else:
+            remaining_args.append(context.args[i])
+            i += 1
+
+    await update.message.chat.send_action("typing")
+    result = fetch_webpage(url, cookies=cookies)
+    if result.startswith("錯誤："):
+        await update.message.reply_text(result)
+    else:
+        if len(result) > 4000:
+            result = result[:4000] + "\n...(截斷)"
+        msg = f"📄 {url}\n\n{result}"
+        if cookies:
+            msg = f"🍪 使用自訂 cookies\n\n{msg}"
+        await update.message.reply_text(msg)
+
+
+# =====================================================================
+# Cookie Management (/cookies)
+# =====================================================================
+
+async def cookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manage stored cookies for authenticated web fetching."""
+    from .cookie_store import set_cookies, clear_cookies, list_domains
+
+    args = context.args or []
+
+    if not args:
+        domains = list_domains()
+        if not domains:
+            await update.message.reply_text("目前沒有儲存任何 cookies。\n\n"
+                                            "/cookies set <網域> <cookie_string> — 儲存 cookies\n"
+                                            "/cookies clear <網域> — 清除指定網域\n"
+                                            "/cookies clear — 清除全部")
+            return
+        lines = ["🍪 已儲存 cookies 的網域：\n"]
+        for d in domains:
+            lines.append(f"  • {d}")
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    sub = args[0].lower()
+
+    if sub == "set":
+        if len(args) < 3:
+            await update.message.reply_text(
+                "用法：/cookies set <網域> <cookie_string>\n\n"
+                "範例：/cookies set example.com \"session=abc123; token=xyz\"\n\n"
+                "Cookie string 格式：name=value; name2=value2"
+            )
+            return
+        domain = args[1].lower()
+        cookie_string = " ".join(args[2:])
+        set_cookies(domain, cookie_string)
+        await update.message.reply_text(f"✅ Cookies 已儲存 for {domain}")
+
+    elif sub == "clear":
+        if len(args) > 1:
+            domain = args[1].lower()
+            clear_cookies(domain)
+            await update.message.reply_text(f"🗑 Cookies 已清除 for {domain}")
+        else:
+            clear_cookies()
+            await update.message.reply_text("🗑 所有 cookies 已清除")
+
+    else:
+        await update.message.reply_text(
+            "用法：\n"
+            "/cookies — 檢視已儲存的 cookies 網域\n"
+            "/cookies set <網域> <cookie_string> — 儲存 cookies\n"
+            "/cookies clear <網域> — 清除指定網域\n"
+            "/cookies clear — 清除全部"
+        )
+
+
+# =====================================================================
+# Direct File Access (/read, /ls)
+# =====================================================================
+
+async def read_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Read a local file directly (bypasses AI)."""
+    from .tools import read_file as _read_file
+    if not context.args:
+        await update.message.reply_text("用法：/read <檔案路徑>\n\n例如：/read /Users/aitree414/somefile.txt")
+        return
+    path = " ".join(context.args)
+    result = _read_file(path)
+    if result.startswith("拒絕存取") or result.startswith("找不到"):
+        await update.message.reply_text(result)
+        return
+    # Truncate for Telegram
+    if len(result) > 4000:
+        result = result[:4000] + "\n...(截斷)"
+    await update.message.reply_text(f"📄 {path}\n\n{result}")
+
+
+async def ls_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List directory contents directly (bypasses AI)."""
+    from .tools import list_directory as _ls
+    if not context.args:
+        path = "/Users/aitree414"
+    else:
+        path = " ".join(context.args)
+    result = _ls(path)
+    await update.message.reply_text(result)
 
 
 async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -656,16 +932,108 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text("對話記憶已清除！")
 
 
+def _preprocess_file_request(text: str) -> str:
+    """Detect file/directory/web access requests and pre-execute them.
+
+    If the user's message contains a file read, directory listing, or web fetch
+    request, execute the tool directly and prepend the result so GPT can
+    analyze it without having to call functions itself.
+
+    Returns the (possibly augmented) message text.
+    """
+    import re
+    from .tools import read_file, list_directory, fetch_webpage
+
+    text_stripped = text.strip()
+
+    # Pattern 1: "讀取 /some/path" or "讀 /some/path" or "看 /some/path"
+    m = re.match(r'^(?:讀取|讀|看|打開|開啟|分析)\s+(/\S+(?:/\S*)*)\s*$', text_stripped)
+    if m:
+        path = m.group(1)
+        result = read_file(path)
+        if not result.startswith("拒絕存取") and not result.startswith("找不到") and not result.startswith("讀取錯誤"):
+            return f"已讀取檔案 {path}，內容如下：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
+        return f"請讀取檔案 {path}，但工具回傳：{result}"
+
+    # Pattern 2: "列出 /some/path" or "看 /some/path 目錄" or "/some/path 有什麼"
+    m = re.match(r'^(?:列出|看|顯示)\s+(/\S+(?:/\S*)*)\s*(?:目錄|資料夾)?\s*$', text_stripped)
+    if m:
+        path = m.group(1)
+        result = list_directory(path)
+        return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
+
+    # Pattern 3: "/path 有什麼" or "/path 目錄"
+    m = re.match(r'^(/\S+(?:/\S*)*)\s*(?:有什麼|目錄|資料夾|裡面有什麼)\s*$', text_stripped)
+    if m:
+        path = m.group(1)
+        result = list_directory(path)
+        return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
+
+    # Pattern 4: "這個檔案 /path" or "檔案 /path"
+    m = re.match(r'^(?:這個)?(?:檔案|文件)\s+(/\S+(?:/\S*)*)\s*$', text_stripped)
+    if m:
+        path = m.group(1)
+        result = read_file(path)
+        if not result.startswith("拒絕存取") and not result.startswith("找不到"):
+            return f"已讀取檔案 {path}，內容如下：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
+        return f"請讀取檔案 {path}，但工具回傳：{result}"
+
+    # Pattern 5: "這個目錄 /path" or "目錄 /path"
+    m = re.match(r'^(?:這個)?(?:目錄|資料夾)\s+(/\S+(?:/\S*)*)\s*$', text_stripped)
+    if m:
+        path = m.group(1)
+        result = list_directory(path)
+        return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
+
+    # Pattern 6: Absolute path starting with / — treat as file read
+    if text_stripped.startswith("/") and not text_stripped.startswith("//"):
+        # Must look like a file path (contain no spaces, or be a single path)
+        if " " not in text_stripped and not text_stripped.startswith("/help"):
+            path = text_stripped
+            if path.endswith("/"):
+                # Looks like a directory
+                result = list_directory(path)
+                return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
+            else:
+                result = read_file(path)
+                if not result.startswith("拒絕存取") and not result.startswith("找不到"):
+                    return f"已讀取檔案 {path}，內容如下：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
+
+    return text
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     claude: ClaudeClient = context.bot_data["claude"]
     await update.message.chat.send_action("typing")
+
+    # Pre-process: intercept file/dir/web requests and execute directly
+    augmented_text = _preprocess_file_request(update.message.text)
+    needs_reply = augmented_text != update.message.text
+
     try:
         # Use auto session for all text messages
-        reply, session_id = claude.chat_with_auto_session(update.effective_user.id, update.message.text)
+        reply, session_id = claude.chat_with_auto_session(update.effective_user.id, augmented_text)
+
+        if needs_reply and reply:
+            # The pre-processor fetched the data, GPT just needs to analyze it
+            pass
+
         await update.message.reply_text(reply)
 
         # Record task after successful response
         await record_conversation_task(update.effective_user.id, session_id)
+    except openai.RateLimitError:
+        logger.error("AI API rate limited")
+        await update.message.reply_text("AI 服務目前忙碌中（API 速率限制），請稍候再試。")
+    except openai.APIConnectionError:
+        logger.error("AI API connection failed")
+        await update.message.reply_text("AI 服務連線失敗，請檢查 API 狀態後再試。")
+    except openai.AuthenticationError:
+        logger.error("AI API key invalid")
+        await update.message.reply_text("AI 服務認證失敗（API Key 可能已失效），請通知管理員。")
+    except openai.APIStatusError as e:
+        logger.error(f"AI API status error: {e.status_code}")
+        await update.message.reply_text(f"AI 服務異常（{e.status_code}），請稍後再試。")
     except Exception:
         logger.exception("handle_text failed")
         await update.message.reply_text("發生錯誤，請稍後再試。")
@@ -869,9 +1237,9 @@ async def deep_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.message.chat.send_action("typing")
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
-        await update.message.reply_text("錯誤：未設定 DEEPSEEK_API_KEY")
+        await update.message.reply_text("錯誤：未設定 API 金鑰（OPENAI_API_KEY 或 DEEPSEEK_API_KEY）")
         return
 
     for symbol in context.args:
@@ -890,9 +1258,9 @@ async def deepscan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     from .stock import _scan_single, TAIWAN_WATCHLIST
 
     await update.message.chat.send_action("typing")
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
-        await update.message.reply_text("錯誤：未設定 DEEPSEEK_API_KEY")
+        await update.message.reply_text("錯誤：未設定 API 金鑰（OPENAI_API_KEY 或 DEEPSEEK_API_KEY）")
         return
 
     symbols = [_normalize_symbol(s) for s in TAIWAN_WATCHLIST]
@@ -921,7 +1289,7 @@ async def deepscan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"信心 {r['confidence']:.0%}"
         )
     lines.append("")
-    lines.append("(分析使用 DeepSeek AI，僅供參考)")
+    lines.append("(分析使用 AI，僅供參考)")
     await update.message.reply_text("\n".join(lines))
 
     # Also send top BUY picks in detail

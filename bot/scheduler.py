@@ -71,7 +71,7 @@ def setup_scheduler(
         if not chat_id:
             return
         try:
-            api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+            api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
             result = get_ai_recommendations(api_key, top_n=5)
             await app.bot.send_message(chat_id=chat_id, text=result)
         except Exception:
@@ -105,6 +105,33 @@ def setup_scheduler(
         except Exception:
             logger.exception("Auto-trader cycle failed")
 
+    async def polymarket_heartbeat_cycle() -> None:
+        heartbeat = app.bot_data.get("polymarket_heartbeat")
+        if not heartbeat:
+            return
+        try:
+            result = await heartbeat.beat()
+            if result.has_events:
+                logger.info("Heartbeat: %s", result.summary_log())
+        except Exception:
+            logger.exception("Polymarket heartbeat cycle failed")
+
+    async def polymarket_copy_trade_cycle() -> None:
+        copy_trader = app.bot_data.get("copy_trader")
+        if not copy_trader or not copy_trader.is_enabled:
+            return
+        try:
+            trades = copy_trader.run_cycle()
+            if trades:
+                logger.info("Copy trader: %d trade(s)", len(trades))
+                if chat_id:
+                    lines = ["👤 複製交易執行：\n"]
+                    for t in trades[:5]:
+                        lines.append(f"  {t['side']} {t['outcome']} x{t['size']} @ ${t['price']:.4f}")
+                    await app.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+        except Exception:
+            logger.exception("Copy trade cycle failed")
+
     if chat_id:
         scheduler.add_job(send_daily_reminder, "cron", hour=hour, minute=0)
         scheduler.add_job(send_poly_picks, "cron", hour=9, minute=30)
@@ -115,5 +142,17 @@ def setup_scheduler(
     from manager.auto_trader import AutoTraderConfig
     _ac = AutoTraderConfig()
     scheduler.add_job(auto_trader_cycle, "interval", minutes=_ac.interval_minutes)
+
+    # Polymarket heartbeat (if enabled)
+    if os.environ.get("POLYMARKET_HEARTBEAT_ENABLED", "false").lower() == "true":
+        interval = int(os.environ.get("POLYMARKET_SCAN_INTERVAL", "60"))
+        scheduler.add_job(polymarket_heartbeat_cycle, "interval", minutes=interval)
+        logger.info("Polymarket heartbeat scheduled (every %d min)", interval)
+
+    # Polymarket copy trading (if enabled)
+    if os.environ.get("POLYCOPY_ENABLED", "false").lower() == "true":
+        interval = int(os.environ.get("POLYCOPY_SCAN_INTERVAL", "15"))
+        scheduler.add_job(polymarket_copy_trade_cycle, "interval", minutes=interval)
+        logger.info("Polymarket copy trader scheduled (every %d min)", interval)
 
     return scheduler

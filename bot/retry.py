@@ -278,13 +278,13 @@ API_RETRY_CONTEXT = create_retry_context(
     retryable_status_codes=[429, 500, 502, 503, 504],
 )
 
-DEEPSEEK_RETRY_CONTEXT = create_retry_context(
+LLM_RETRY_CONTEXT = create_retry_context(
     max_retries=3,
     initial_delay=1.0,
     max_delay=10.0,
     backoff_factor=2.0,
     retryable_exceptions=(
-        # OpenAI/DeepSeek specific exceptions
+        # LLM API specific exceptions
         # Note: These need to be imported where used
     ),
     retryable_status_codes=[429, 500, 502, 503, 504],

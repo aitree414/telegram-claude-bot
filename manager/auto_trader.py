@@ -218,8 +218,16 @@ class AutoTrader:
                 position_value = current_value * (self.config.max_position_pct / 100)
                 shares = max(1, int(position_value / current))
 
+                # Build current positions from sim portfolio for risk check
+                positions = self.sim_portfolio.list_holdings() if self.sim_portfolio else []
+                current_positions = [
+                    {"symbol": h["symbol"],
+                     "value": h["avg_cost"] * h["net_shares"],
+                     "sector": ""}
+                    for h in positions
+                ]
                 allowed, reason = self.risk_manager.validate_new_position(
-                    symbol, position_value, current_value, []
+                    symbol, position_value, current_value, current_positions
                 )
                 if not allowed:
                     logger.info(f"Auto-trade BUY {symbol} blocked: {reason}")

@@ -4,12 +4,15 @@ This module centralizes configuration constants to ensure consistency
 across different parts of the application.
 """
 
-# DeepSeek API configuration
-DEEPSEEK_MODEL = "deepseek-chat"
+import os
+
+# Model configuration (override via OPENAI_MODEL env var)
+# Uses gpt-4o by default; also works with gpt-4o-mini, gpt-4-turbo, etc.
+API_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
 # Token limits
 API_MAX_TOKENS = 4096  # Maximum tokens to generate in API responses
-MAX_CONTEXT_WINDOW = 50000  # Maximum context window size for DeepSeek
+MAX_CONTEXT_WINDOW = 128000  # GPT-4o context window
 POLYMARKET_MAX_TOKENS = 1500  # Specific limit for Polymarket analysis
 
 # Tool execution limits

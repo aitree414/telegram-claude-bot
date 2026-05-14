@@ -1,7 +1,16 @@
 import asyncio
 import logging
 import os
+import ssl
 import sys
+
+# Fix SSL for macOS LibreSSL (Polymarket CLOB, etc.)
+try:
+    import certifi
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+except Exception:
+    pass
 
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -19,20 +28,27 @@ from bot.handlers import (
     buysim_command,
     clear_command,
     consolidated_command,
+    cookies_command,
+    copy_command,
     deep_command,
     deepscan_command,
     delalert_command,
+    fetch_command,
     files_command,
     handle_document,
     handle_photo,
     handle_text,
+    health_command,
     help_command,
     history_command,
     new_command,
     sessions_command,
     poly_command,
     poly_pick_command,
+    polymarket_command,
     portfolio_command,
+    read_command,
+    ls_command,
     report_command,
     risk_command,
     scan_command,
@@ -53,6 +69,9 @@ from manager.portfolio_manager_agent import PortfolioManagerAgent
 from manager.portfolio_risk import PortfolioRiskManager
 from manager.auto_trader import AutoTrader
 from manager.real_trader_bridge import RealTradeBridge
+from manager.polymarket_trader import PolymarketTrader
+from manager.polymarket_heartbeat import PolymarketHeartbeat
+from manager.copy_trader import CopyTrader
 
 load_dotenv()
 
@@ -76,7 +95,7 @@ def main() -> None:
         logger.warning("Failed to create some directories, continuing anyway")
 
     # Create components
-    claude = ClaudeClient(api_key=config.deepseek_api_key, authorized_user_id=config.authorized_user_id)
+    claude = ClaudeClient(api_key=config.api_key, authorized_user_id=config.authorized_user_id)
     alert_manager = AlertManager()
     watchlist_manager = WatchlistManager()
     portfolio_manager = PortfolioManager()
@@ -135,6 +154,25 @@ def main() -> None:
     app.add_handler(CommandHandler("autotrade", autotrade_command))
     app.add_handler(CommandHandler("tokenmap", tokenmap_command))
 
+    # Polymarket auto-trader (Phase 1: CLOB execution + NEH + PairArb)
+    polymarket_trader = PolymarketTrader(risk_manager=portfolio_risk_manager)
+    app.bot_data["polymarket_trader"] = polymarket_trader
+
+    # PolymarketHeartbeat (Phase 3a — scheduled scanning + price alerts)
+    polymarket_heartbeat = PolymarketHeartbeat(
+        trader=polymarket_trader,
+        app=app,
+        chat_id=config.reminder_chat_id,
+    )
+    app.bot_data["polymarket_heartbeat"] = polymarket_heartbeat
+
+    # CopyTrader (Phase 3b — leader wallet mirroring)
+    copy_trader = CopyTrader() if os.environ.get("POLYGONSCAN_API_KEY") else None
+    app.bot_data["copy_trader"] = copy_trader
+
+    app.add_handler(CommandHandler("polymarket", polymarket_command))
+    app.add_handler(CommandHandler("copy", copy_command))
+
     # New commands (Priority 1 — Deep Persona Analysis)
     app.add_handler(CommandHandler("deep", deep_command))
     app.add_handler(CommandHandler("deepscan", deepscan_command))
@@ -149,6 +187,11 @@ def main() -> None:
     app.add_handler(CommandHandler("buysim", buysim_command))
     app.add_handler(CommandHandler("sellsim", sellsim_command))
     app.add_handler(CommandHandler("simportfolio", simportfolio_command))
+    app.add_handler(CommandHandler("health", health_command))
+    app.add_handler(CommandHandler("fetch", fetch_command))
+    app.add_handler(CommandHandler("cookies", cookies_command))
+    app.add_handler(CommandHandler("read", read_command))
+    app.add_handler(CommandHandler("ls", ls_command))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -180,7 +223,7 @@ def main() -> None:
     app.post_shutdown = on_shutdown
 
     logger.info("Bot started!")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

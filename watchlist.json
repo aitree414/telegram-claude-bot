@@ -1,0 +1,21 @@
+{
+  "symbols": [
+    "AAPL", "MSFT", "GOOGL", "TSLA", "NVDA",
+    "2330.TW", "2317.TW",
+    "COIN", "MSTR", "BITO", "RIOT", "CLSK"
+  ],
+  "names": {
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet",
+    "TSLA": "Tesla",
+    "NVDA": "NVIDIA",
+    "2330.TW": "台積電",
+    "2317.TW": "鴻海",
+    "COIN": "Coinbase",
+    "MSTR": "MicroStrategy",
+    "BITO": "ProShares Bitcoin ETF",
+    "RIOT": "Riot Platforms",
+    "CLSK": "CleanSpark"
+  }
+}
