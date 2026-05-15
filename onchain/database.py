@@ -418,6 +418,30 @@ class OnchainDatabase:
         finally:
             session.close()
 
+    def mark_signal_processed(self, signal_id: int) -> bool:
+        """Mark a signal as processed in the database.
+
+        Args:
+            signal_id: Signal ID to mark
+
+        Returns:
+            True if successful, False otherwise
+        """
+        session = self.get_session()
+        try:
+            signal = session.query(Signal).filter(Signal.id == signal_id).first()
+            if signal:
+                signal.processed = True
+                session.commit()
+                return True
+            return False
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"Failed to mark signal {signal_id} as processed: {e}")
+            return False
+        finally:
+            session.close()
+
     # Trade operations
     def add_trade(self, trade_data: Dict[str, Any]) -> Optional[Trade]:
         """Add a new trade to the database."""

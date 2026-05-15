@@ -141,11 +141,11 @@ class Web3Config:
         self.dex_configs['uniswap_v2'] = {
             'router': os.environ.get(
                 'TEST_UNISWAP_V2_ROUTER',
-                '0xC532a74256D338Db9Ee4E7e38E9046eE5fE6a8a3'
+                '0xc532a74256d338db9eE4e7E38E9046ee5fE6A8a3'
             ),
             'factory': os.environ.get(
                 'TEST_UNISWAP_V2_FACTORY',
-                '0x7E0987E8b5C0E2D1F2B0c7D5F8F1E3A1B5C8D9E0'
+                '0x7E0987E8B5c0E2d1f2B0c7d5F8F1e3a1B5c8D9E0'
             ),
         }
 

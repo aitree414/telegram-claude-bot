@@ -1,5 +1,6 @@
 # Environment — contains secrets, never commit
 .env
+.env.bak
 .env.local
 .env.*.local
 
@@ -8,6 +9,20 @@ conversations.db
 conversations.db-*
 *.db
 *.db-*
+
+# Runtime data (auto-generated)
+data/
+portfolio_sim.json
+portfolio_risk.json
+alerts.json
+watchlist.json
+portfolio.json
+
+# Logs
+bot.log
+logs/
+*.log
+*.log.*
 
 # Python cache
 __pycache__/
@@ -26,12 +41,6 @@ env/
 venv_poly/
 .venv/
 ENV/
-
-# Logs
-*.log
-*.log.*
-bot.log*
-logs/
 
 # Backup files
 *.backup
@@ -53,15 +62,41 @@ Thumbs.db
 # Claude Code session data
 .claude/
 
+# Claude router (old system, no longer used)
+claude_router_self_healing.py
+claude_router_daemon.sh
+install_claude_router_self_healing.sh
+com.aitree414.claude-router-self-healing.plist
+auto_fix_deepseek.sh
+keep_alive.sh
+
+# Start/stop scripts (old, handled by PM2)
+start*.sh
+stop*.sh
+
+# Test scripts (one-time use)
+test_*.sh
+test_*.html
+test_*.py
+
+# Utility scripts (one-time use)
+task_manager.py
+task_based_development_system.py
+check_web_status.sh
+poly_check.py
+poly_deposit.py
+polymarket_login.py
+
 # Compiled Solidity artifacts
 contracts/compiled/
 
+# Old development docs (may contain API keys)
+docs/
+
 # Misc
 .env.txt
-data/
 web-apps/
 fix_*.sh
 demo_*.py
-test_*.py
 fixed_*.py
 *.backup.local

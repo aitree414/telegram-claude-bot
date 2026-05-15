@@ -231,7 +231,7 @@ class TradeOrchestrator:
         if not is_valid:
             logger.info(f"Signal {signal_id} rejected: {reason}")
             # Mark as processed to avoid infinite retry
-            signal.processed = True
+            self.database.mark_signal_processed(signal.id)
             return ProcessingResult(
                 signal_id=signal_id,
                 signal_type=signal_type,
@@ -241,7 +241,7 @@ class TradeOrchestrator:
 
         # 2. Skip HOLD signals
         if signal_type == SignalType.HOLD:
-            signal.processed = True
+            self.database.mark_signal_processed(signal.id)
             return ProcessingResult(
                 signal_id=signal_id,
                 signal_type=signal_type,
@@ -253,7 +253,7 @@ class TradeOrchestrator:
         executor = self._get_executor(signal.chain)
         if not executor:
             error_msg = f"No executor available for {signal.chain}"
-            signal.processed = True
+            self.database.mark_signal_processed(signal.id)
             return ProcessingResult(
                 signal_id=signal_id,
                 signal_type=signal_type,
@@ -274,7 +274,7 @@ class TradeOrchestrator:
                 # For sell signals, we need an existing trade
                 # TODO: Implement sell execution
                 logger.warning(f"Sell signal {signal_id} received but sell execution not yet implemented")
-                signal.processed = True
+                self.database.mark_signal_processed(signal.id)
                 return ProcessingResult(
                     signal_id=signal_id,
                     signal_type=signal_type,
@@ -282,7 +282,7 @@ class TradeOrchestrator:
                     error="Sell execution not implemented",
                 )
             else:
-                signal.processed = True
+                self.database.mark_signal_processed(signal.id)
                 return ProcessingResult(
                     signal_id=signal_id,
                     signal_type=signal_type,
@@ -292,7 +292,7 @@ class TradeOrchestrator:
 
         except Exception as e:
             logger.error(f"Signal {signal_id} execution error: {e}")
-            signal.processed = True
+            self.database.mark_signal_processed(signal.id)
             return ProcessingResult(
                 signal_id=signal_id,
                 signal_type=signal_type,
@@ -303,7 +303,7 @@ class TradeOrchestrator:
         # 5. Process result
         if trade:
             self._processing_stats['successful_trades'] += 1
-            signal.processed = True
+            self.database.mark_signal_processed(signal.id)
             if hasattr(signal, 'trade_id'):
                 signal.trade_id = trade.id
 
@@ -315,7 +315,7 @@ class TradeOrchestrator:
             )
 
         # Trade execution started but no trade record created
-        signal.processed = True
+        self.database.mark_signal_processed(signal.id)
         return ProcessingResult(
             signal_id=signal_id,
             signal_type=signal_type,

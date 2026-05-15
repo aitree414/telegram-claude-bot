@@ -124,6 +124,18 @@ class TransactionBuilder:
             gas_limit = gas_estimate.gas_limit
             max_fee = gas_estimate.max_fee_per_gas
 
+        # Apply gas multiplier from config (default 1.1 = 10% buffer)
+        max_fee = max_fee * self.config.gas_multiplier
+
+        # Enforce minimum gas price floor (3 gwei) so transactions don't get dropped
+        MIN_GAS_PRICE_GWEI = 3
+        if max_fee < MIN_GAS_PRICE_GWEI:
+            logger.warning(
+                "Gas price %.2f gwei below minimum %.2f, raising to floor",
+                max_fee, MIN_GAS_PRICE_GWEI
+            )
+            max_fee = MIN_GAS_PRICE_GWEI
+
         # Build final transaction
         transaction = {
             **tx_data,

@@ -9,12 +9,14 @@ logger = logging.getLogger(__name__)
 
 PORTFOLIO_FILE = Path.home() / "telegram-claude-bot" / "portfolio.json"
 SIM_PORTFOLIO_FILE = Path.home() / "telegram-claude-bot" / "portfolio_sim.json"
+DEFAULT_SIM_CAPITAL = 400000  # 預設模擬本金 40 萬 TWD
 
 
 class PortfolioManager:
     def __init__(self, simulation: bool = False) -> None:
         self._trades: list[dict[str, Any]] = []
         self._next_id = 1
+        self._initial_capital = 0.0
         self._lock = threading.RLock()
         self._simulation = simulation
         self._load()
@@ -30,6 +32,7 @@ class PortfolioManager:
                     data = json.loads(fp.read_text())
                     self._trades = data.get("trades", [])
                     self._next_id = data.get("next_id", 1)
+                    self._initial_capital = data.get("initial_capital", 0.0)
                 except Exception:
                     logger.exception("載入 portfolio 失敗")
 
@@ -38,15 +41,31 @@ class PortfolioManager:
             try:
                 fp = self._file_path()
                 fp.parent.mkdir(parents=True, exist_ok=True)
-                fp.write_text(
-                    json.dumps(
-                        {"trades": self._trades, "next_id": self._next_id},
-                        ensure_ascii=False,
-                        indent=2,
-                    )
-                )
+                payload = {
+                    "trades": self._trades,
+                    "next_id": self._next_id,
+                    "initial_capital": self._initial_capital,
+                }
+                fp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
             except Exception:
                 logger.exception("儲存 portfolio 失敗")
+
+    def set_initial_capital(self, amount: float) -> None:
+        """設定模擬交易初始本金（僅 sim 模式有效）。"""
+        with self._lock:
+            self._initial_capital = amount
+            self._save()
+
+    def get_cash(self) -> float:
+        """計算可用現金 = initial_capital - 買入成本 + 賣出收入"""
+        with self._lock:
+            cash = self._initial_capital
+            for t in self._trades:
+                if t["action"] == "buy":
+                    cash -= t["shares"] * t["price"]
+                else:
+                    cash += t["shares"] * t["price"]
+            return cash
 
     def buy(self, symbol: str, shares: float, price: float, note: str = "") -> int:
         """Record a buy trade. Returns trade ID."""

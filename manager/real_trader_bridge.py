@@ -153,7 +153,7 @@ class RealTradeBridge:
             "take_profit": None,
             "signal_data": {"source": "auto_trader_real", "reason": reason},
             "generated_at": datetime.utcnow(),
-            "processed": False,
+            "processed": True,  # Pre-set as processed since bridge routes directly
         }
         signal = self.db.add_signal(signal_data)
         if not signal:
@@ -285,4 +285,29 @@ class RealTradeBridge:
             return float(Web3.from_wei(bal, "ether"))
         except Exception:
             logger.exception("Failed to get balance")
+            return None
+
+    def get_native_balance(self, chain_name: str = "ethereum") -> Optional[float]:
+        """Get native token (ETH/BNB/etc.) balance for a chain by name.
+
+        Unlike *get_balance*, this doesn't require a token_map entry and
+        directly queries the native balance for the given chain.
+        """
+        if not self.orchestrator:
+            return None
+        chain = self._parse_chain(chain_name)
+        if chain is None:
+            return None
+        web3 = self.orchestrator._get_web3_for_chain(chain)
+        if not web3:
+            return None
+        wallet = self.orchestrator.wallet
+        if not wallet or not wallet.wallet_address:
+            return None
+        try:
+            from web3 import Web3
+            bal = web3.eth.get_balance(wallet.wallet_address)
+            return float(Web3.from_wei(bal, "ether"))
+        except Exception:
+            logger.exception("Failed to get native balance")
             return None

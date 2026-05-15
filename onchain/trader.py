@@ -136,7 +136,7 @@ class TradeExecutor:
                 return None
 
             # Wait for confirmation
-            receipt = self._wait_for_confirmation(tx_hash)
+            receipt = await self._wait_for_confirmation(tx_hash)
 
             if not receipt:
                 self._log_execution(signal.id, 'execute_buy', 'failed',
@@ -258,7 +258,7 @@ class TradeExecutor:
                 return False
 
             # Step 4: Wait for confirmation
-            receipt = self._wait_for_confirmation(tx_hash)
+            receipt = await self._wait_for_confirmation(tx_hash)
 
             if not receipt:
                 self._log_execution(None, 'execute_sell', 'failed',
@@ -342,7 +342,7 @@ class TradeExecutor:
                 return False
 
             # Wait for confirmation
-            receipt = self._wait_for_confirmation(tx_hash)
+            receipt = await self._wait_for_confirmation(tx_hash)
 
             if receipt and receipt.get('status') == 1:
                 logger.info(f"Token {token_address[:10]}... approved for {spender[:10]}...")
@@ -396,7 +396,7 @@ class TradeExecutor:
             logger.error(f"Failed to broadcast transaction: {e}")
             return None
 
-    def _wait_for_confirmation(
+    async def _wait_for_confirmation(
         self,
         tx_hash: str,
         timeout: int = 300,
@@ -447,7 +447,7 @@ class TradeExecutor:
                 pass
 
             # Sleep before next poll
-            time.sleep(poll_interval)
+            await asyncio.sleep(poll_interval)
 
         logger.warning(f"Transaction confirmation timeout: {tx_hash[:20]}...")
         return None

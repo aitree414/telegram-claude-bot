@@ -88,6 +88,12 @@ class CommitteeTrader:
             total += price * h["net_shares"]
         return max(total, 10000.0)
 
+    def _get_available_cash(self) -> float:
+        """回傳可用現金（模擬）。初始本金 40 萬，扣掉買入成本加回賣出收入。"""
+        if not self.sim_portfolio:
+            return 400000.0
+        return self.sim_portfolio.get_cash()
+
     @staticmethod
     def _resolve_symbol(code: str) -> str:
         """Resolve raw stock code to exchange-suffixed symbol."""
@@ -173,9 +179,15 @@ class CommitteeTrader:
                                 code, confidence, self.config.min_confidence)
                     continue
 
-                # Risk check
+                # Risk check: position size limited by portfolio % AND available cash
                 current_value = self._estimate_portfolio_value()
                 position_value = current_value * (self.config.max_position_pct / 100)
+                available_cash = self._get_available_cash()
+                position_value = min(position_value, available_cash)
+                if position_value < price:
+                    logger.info("BUY %s skipped: position_value %.0f < price %.2f (cash %.0f)",
+                                code, position_value, price, available_cash)
+                    continue
                 shares = max(1, int(position_value / price))
 
                 if self.sim_portfolio:

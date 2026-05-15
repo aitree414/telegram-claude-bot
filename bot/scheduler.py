@@ -206,6 +206,32 @@ def setup_scheduler(
         scheduler.add_job(send_poly_picks, "cron", hour=9, minute=30)
         scheduler.add_job(send_committee_report, "cron", hour=7, minute=35, day_of_week="mon-fri")
         scheduler.add_job(committee_trader_cycle, "cron", hour=7, minute=40, day_of_week="mon-fri")
+
+        # Web3 加密貨幣委員會自動交易（7:45 AM，股票之後）
+        async def crypto_committee_trader_cycle() -> None:
+            crypto_trader = app.bot_data.get("crypto_committee_trader")
+            if not crypto_trader:
+                return
+            try:
+                actions = await crypto_trader.run_cycle()
+                if actions:
+                    logger.info("Crypto committee trader: %d action(s)", len(actions))
+                    if chat_id:
+                        lines = ["🔮 Web3 加密貨幣委員會自動交易執行：\n"]
+                        for a in actions:
+                            if a["action"] == "BUY":
+                                lines.append(f"  🟢 買入 {a['name']} ({a['symbol']}) {a.get('amount_eth', '?')} ETH")
+                            elif a["action"] == "SELL":
+                                lines.append(f"  🔴 賣出 {a['name']} ({a['symbol']})")
+                            elif a["action"] == "BLOCKED":
+                                lines.append(f"  ⚠️ 阻擋 {a['name']} ({a['symbol']})：{a.get('reason', '')}")
+                            elif a["action"] == "FAILED":
+                                lines.append(f"  ❌ 失敗 {a['name']} ({a['symbol']})：{a.get('reason', '')}")
+                        await app.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+            except Exception:
+                logger.exception("Crypto committee trader cycle failed")
+
+        scheduler.add_job(crypto_committee_trader_cycle, "cron", hour=7, minute=45, day_of_week="mon-fri")
     scheduler.add_job(check_price_alerts, "interval", minutes=5)
     scheduler.add_job(archive_old_sessions, "cron", hour=3, minute=0)  # Daily at 3 AM
 

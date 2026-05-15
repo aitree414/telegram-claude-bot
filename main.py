@@ -70,6 +70,7 @@ from manager.portfolio_manager_agent import PortfolioManagerAgent
 from manager.portfolio_risk import PortfolioRiskManager
 from manager.auto_trader import AutoTrader
 from manager.committee_trader import CommitteeTrader
+from manager.crypto_committee_trader import CryptoCommitteeTrader
 from manager.real_trader_bridge import RealTradeBridge
 from manager.polymarket_trader import PolymarketTrader
 from manager.polymarket_heartbeat import PolymarketHeartbeat
@@ -134,6 +135,13 @@ def main() -> None:
     )
     app.bot_data["committee_trader"] = committee_trader
     logger.info("AI 委員會自動交易引擎已載入")
+
+    # Web3 加密貨幣委員會自動交易（透過 RealTradeBridge 執行鏈上交易）
+    crypto_committee_trader = CryptoCommitteeTrader(
+        real_trade_bridge=real_trade_bridge,
+    )
+    app.bot_data["crypto_committee_trader"] = crypto_committee_trader
+    logger.info("Web3 加密貨幣委員會自動交易引擎已載入")
 
     # Run automatic repair checks on startup
     repair_manager = get_repair_manager()

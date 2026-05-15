@@ -1,6 +1,6 @@
 """Polymarket CLOB API client — orderbook, signing, and execution.
 
-Supports authentication via wallet private key (EIP-191),
+Supports L1 (EIP-712 ClobAuthDomain) and L2 (HMAC-SHA256) auth,
 EIP-712 typed order signing, and gasless order relay.
 
 Environment variables
@@ -8,13 +8,19 @@ Environment variables
 POLYMARKET_PRIVATE_KEY    — Polygon wallet PK (falls back to PRIVATE_KEY)
 POLYMARKET_API_KEY        — Pre-generated API key (skip auth if set)
 POLYMARKET_API_SECRET     — Pre-generated API secret (skip auth if set)
+POLYMARKET_PASSPHRASE     — Pre-generated API passphrase (skip auth if set)
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
+import re
+import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -27,9 +33,52 @@ from web3 import Web3
 
 logger = logging.getLogger(__name__)
 
+# ── DNS bypass for Taiwan ISP poisoning ──────────────────────────
+# `clob.polymarket.com` and `gamma-api.polymarket.com` are DNS-
+# blocked in Taiwan by court order.  We pre-resolve via Cloudflare
+# DNS (1.1.1.1) and monkey-patch socket.getaddrinfo so that all
+# httpx / requests calls use the real IP instead of the ISP's
+# redirect (182.173.0.181).
+
+_DNS_OVERRIDE: dict[str, str] = {}
+
+
+def _patch_dns() -> None:
+    for domain in ("clob.polymarket.com", "gamma-api.polymarket.com"):
+        try:
+            out = subprocess.check_output(
+                ["nslookup", domain, "1.1.1.1"],
+                stderr=subprocess.STDOUT, text=True, timeout=5,
+            )
+            ips = re.findall(r"Address: (\d+\.\d+\.\d+\.\d+)", out)
+            if ips:
+                _DNS_OVERRIDE[domain] = ips[0]
+        except Exception:
+            pass
+
+    if not _DNS_OVERRIDE:
+        return  # fall through to system DNS
+
+    import socket as _socket
+    _orig = _socket.getaddrinfo
+
+    def _patched(host, port, family=0, type=0, proto=0, flags=0):
+        ip = _DNS_OVERRIDE.get(host)
+        if ip is not None:
+            host = ip
+        return _orig(host, port, family, type, proto, flags)
+
+    _socket.getaddrinfo = _patched
+    logger.info(f"DNS patched: {', '.join(f'{d} -> {_DNS_OVERRIDE[d]}' for d in _DNS_OVERRIDE)}")
+
+
+_patch_dns()
+
+# ─────────────────────────────────────────────────────────────────
+
 CLOB_API = "https://clob.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
-POLYGON_RPC = "https://polygon-rpc.com"
+POLYGON_RPC = os.environ.get("POLYGON_RPC_URL") or "https://polygon-rpc.com"
 CHAIN_ID = 137
 
 # ──────────────────────────────────────────────
@@ -102,7 +151,18 @@ class PolymarketCLOB:
 
     def __init__(self, private_key: Optional[str] = None,
                  api_key: Optional[str] = None):
-        self._http = httpx.Client(base_url=CLOB_API, timeout=15)
+        # macOS LibreSSL can't verify Polymarket's cert chain — skip verify
+        # event_hooks are populated by _set_auth_headers() once credentials exist
+        # Proxy support: POLYMARKET_PROXY env var (e.g. http://127.0.0.1:7890)
+        proxy = (os.environ.get("POLYMARKET_PROXY")
+                 or os.environ.get("HTTPS_PROXY")
+                 or os.environ.get("HTTP_PROXY")
+                 or "")
+        self._http = httpx.Client(
+            base_url=CLOB_API, timeout=15, verify=False,
+            event_hooks={"request": []},
+            proxy=proxy or None,
+        )
         self._w3 = Web3(Web3.HTTPProvider(POLYGON_RPC, request_kwargs={"timeout": 10}))
 
         # Wallet
@@ -114,57 +174,151 @@ class PolymarketCLOB:
             self._account = None
             self.wallet_address = None
 
-        # API credentials
+        # API credentials (L2 auth)
         self._api_key = api_key or os.environ.get("POLYMARKET_API_KEY") or ""
         self._api_secret = os.environ.get("POLYMARKET_API_SECRET") or ""
+        self._api_passphrase = os.environ.get("POLYMARKET_PASSPHRASE") or ""
         self._api_key_ts: int = 0  # timestamp used when deriving key
 
-        if self._api_key:
+        if self._api_key and self._api_secret and self._api_passphrase:
+            self._set_auth_headers()
+        elif self._api_key:
             self._set_auth_headers()
         elif self._account:
             self._derive_api_key()
 
     # ── Auth ──────────────────────────────────
 
+    @staticmethod
+    def _l2_signature(secret: str, method: str, path: str, timestamp: str) -> str:
+        """HMAC-SHA256 signature for L2 authenticated requests.
+
+        The secret is URL-safe base64.  The signature output is also
+        URL-safe base64 (``+`` → ``-``, ``/`` → ``_``).
+        """
+        message = timestamp + method + path
+        raw_secret = base64.urlsafe_b64decode(secret)
+        sig = hmac.new(raw_secret, message.encode(), hashlib.sha256).digest()
+        return base64.b64encode(sig).decode().replace("+", "-").replace("/", "_")
+
     def _set_auth_headers(self) -> None:
-        self._http.headers["Authorization"] = f"Bearer {self._api_key}"
+        """Attach L2 auth headers to the httpx client via event hook.
+
+        Each request gets POLY_ADDRESS, POLY_SIGNATURE (per-request HMAC),
+        POLY_TIMESTAMP, POLY_API_KEY, and POLY_PASSPHRASE.
+        """
+        if not self._api_key:
+            return
+
+        # Remove any previous request hook to avoid duplicates
+        self._http._event_hooks["request"] = []
+
+        def _l2_auth_hook(request: httpx.Request) -> None:
+            ts = str(int(time.time()))  # seconds (JS: Math.floor(Date.now()/1000))
+            path = request.url.path
+            method = request.method.upper()
+            sig = self._l2_signature(self._api_secret, method, path, ts)
+            request.headers["POLY_ADDRESS"] = self.wallet_address or ""
+            request.headers["POLY_SIGNATURE"] = sig
+            request.headers["POLY_TIMESTAMP"] = ts
+            request.headers["POLY_API_KEY"] = self._api_key
+            request.headers["POLY_PASSPHRASE"] = self._api_passphrase or ""
+
+        self._http._event_hooks["request"].append(_l2_auth_hook)
 
     def _derive_api_key(self) -> None:
-        """EIP-191 signed timestamp → exchange for API key."""
+        """EIP-712 ClobAuthDomain signature → exchange for API key.
+
+        Current Polymarket L1 auth flow (as of 2025/2026):
+          - EIP-712 typed data with domain ``ClobAuthDomain``
+          - Sent as HTTP headers (``POLY_ADDRESS``, ``POLY_SIGNATURE``,
+            ``POLY_TIMESTAMP``, ``POLY_NONCE``)
+        """
         if not self._account:
             logger.warning("No wallet private key, running in read-only mode")
             return
 
-        ts = int(time.time() * 1000)
-        msg = encode_defunct(text=f"POLYMARKET_CLOB_KEY_{ts}")
-        sig = self._account.sign_message(msg)
-        self._api_key_ts = ts
+        ts = str(int(time.time()))
+        nonce = 0
+
+        domain = {"name": "ClobAuthDomain", "version": "1", "chainId": CHAIN_ID}
+        types = {
+            "ClobAuth": [
+                {"name": "address", "type": "address"},
+                {"name": "timestamp", "type": "string"},
+                {"name": "nonce", "type": "uint256"},
+                {"name": "message", "type": "string"},
+            ]
+        }
+        values = {
+            "address": self.wallet_address,
+            "timestamp": ts,
+            "nonce": nonce,
+            "message": "This message attests that I control the given wallet",
+        }
 
         try:
-            resp = httpx.post(
-                f"{CLOB_API}/auth/api-key",
-                json={
-                    "signature": sig.signature.hex(),
-                    "timestamp": ts,
-                    "wallet": self.wallet_address,
-                },
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-            # The API returns {"api_key": "...", "secret": "...", ...}
-            self._api_key = data.get("api_key", "")
-            if not self._api_key:
-                # Alternative response shape
-                self._api_key = data.get("token", "")
-            self._api_secret = data.get("secret", data.get("api_secret", ""))
-            self._set_auth_headers()
-            logger.info(f"Polymarket CLOB authenticated as {self.wallet_address[:10]}...")
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"CLOB auth failed ({e.response.status_code}), running read-only")
+            signable = encode_typed_data(domain, types, values)
+            signed = self._account.sign_message(signable)
+            sig_hex = signed.signature.hex()
         except Exception as e:
-            logger.warning(f"CLOB auth error: {e}, running read-only")
+            logger.error(f"L1 EIP-712 signing failed: {e}")
+            return
+
+        self._api_key_ts = int(ts)
+
+        headers = {
+            "POLY_ADDRESS": self.wallet_address,
+            "POLY_SIGNATURE": sig_hex,  # already includes 0x prefix
+            "POLY_TIMESTAMP": ts,
+            "POLY_NONCE": str(nonce),
+        }
+
+        # Try derive first (credentials already exist), fall back to create
+        # NOTE: use self._http (not standalone httpx) so the DNS patch applies
+        for endpoint, method in [
+            ("/auth/derive-api-key", "GET"),
+            ("/auth/api-key", "POST"),
+        ]:
+            try:
+                if method == "GET":
+                    resp = self._http.get(endpoint, headers=headers)
+                else:
+                    resp = self._http.post(endpoint, headers=headers)
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    self._api_key = data.get("apiKey", data.get("api_key", ""))
+                    self._api_secret = data.get("secret", "")
+                    self._api_passphrase = data.get("passphrase", "")
+                    self._set_auth_headers()
+                    logger.info(
+                        f"Polymarket CLOB authenticated as "
+                        f"{self.wallet_address[:10]}..."
+                    )
+                    return
+
+                if resp.status_code == 404:
+                    continue  # try next endpoint
+
+                # For HTTP errors on the last attempt, log but don't retry
+                if endpoint == "/auth/api-key":
+                    logger.warning(
+                        f"CLOB auth failed ({resp.status_code}), "
+                        f"running read-only"
+                    )
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    continue
+                if endpoint == "/auth/api-key":
+                    logger.warning(
+                        f"CLOB auth failed ({e.response.status_code}), "
+                        f"running read-only"
+                    )
+            except Exception as e:
+                if endpoint == "/auth/api-key":
+                    logger.warning(f"CLOB auth error: {e}, running read-only")
 
     def _ensure_auth(self) -> None:
         if not self._api_key and self._account:
@@ -179,6 +333,7 @@ class PolymarketCLOB:
                 f"{GAMMA_API}/markets",
                 params={"slug": slug},
                 timeout=10,
+                verify=False,
             )
             resp.raise_for_status()
             markets = resp.json()
@@ -235,6 +390,7 @@ class PolymarketCLOB:
                 f"{GAMMA_API}/markets",
                 params={"condition_id": condition_id},
                 timeout=10,
+                verify=False,
             )
             resp.raise_for_status()
             markets = resp.json()
@@ -369,7 +525,8 @@ class PolymarketCLOB:
         }
 
         try:
-            signed = self._account.sign_typed_data(domain, types, values)
+            signable = encode_typed_data(domain, types, values)
+            signed = self._account.sign_message(signable)
             signature = signed.signature.hex()
         except Exception as e:
             logger.error(f"EIP-712 signing failed: {e}")
@@ -380,7 +537,7 @@ class PolymarketCLOB:
             "price": str(price),
             "size": str(size),
             "side": side.upper(),
-            "signature": f"0x{signature}",
+            "signature": signature,  # already includes 0x prefix
             "salt": str(salt),
             "maker": self.wallet_address,
             "signer": self.wallet_address,
@@ -457,10 +614,17 @@ class PolymarketCLOB:
     # ── Positions & Orders ────────────────────
 
     def get_positions(self) -> list[Position]:
-        """Fetch current positions."""
+        """Fetch current positions via Gamma API (data endpoint)."""
         self._ensure_auth()
+        if not self.wallet_address:
+            return []
         try:
-            resp = self._http.get("/positions")
+            resp = httpx.get(
+                f"{GAMMA_API}/positions",
+                params={"user": self.wallet_address, "limit": 100},
+                timeout=10,
+                verify=False,
+            )
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -471,20 +635,20 @@ class PolymarketCLOB:
         for p in data if isinstance(data, list) else data.get("data", []):
             try:
                 positions.append(Position(
-                    token_id=str(p.get("tokenId", "")),
+                    token_id=str(p.get("tokenId", p.get("token_id", ""))),
                     side=p.get("side", "BUY"),
                     size=float(p.get("size", 0)),
-                    avg_price=float(p.get("avgPrice", 0)),
+                    avg_price=float(p.get("avgPrice", p.get("avg_price", 0))),
                 ))
             except (ValueError, TypeError):
                 continue
         return positions
 
     def get_orders(self) -> list[dict]:
-        """Fetch open orders."""
+        """Fetch open orders (L2-authenticated)."""
         self._ensure_auth()
         try:
-            resp = self._http.get("/orders")
+            resp = self._http.get("/data/orders")
             resp.raise_for_status()
             data = resp.json()
             return data if isinstance(data, list) else data.get("data", [])
@@ -508,6 +672,7 @@ class PolymarketCLOB:
                     "ascending": "false",
                 },
                 timeout=15,
+                verify=False,
             )
             resp.raise_for_status()
             raw = resp.json()

@@ -117,6 +117,23 @@ class UniswapV2Client(DEXClient):
         self.router = self._load_router_contract(router_address)
         self.factory = self._load_factory_contract(factory_address)
 
+        # Cache of WETH address from the router contract
+        self._weth_address: Optional[str] = None
+
+    def _get_weth_address(self) -> Optional[str]:
+        """Get WETH address from the router contract (lazy-loaded)."""
+        if self._weth_address is not None:
+            return self._weth_address
+        if not self.router:
+            return None
+        try:
+            self._weth_address = self.router.functions.WETH().call()
+            logger.info(f"Uniswap V2 WETH address: {self._weth_address}")
+            return self._weth_address
+        except Exception as e:
+            logger.error(f"Failed to get WETH address from router: {e}")
+            return None
+
     def _load_router_contract(self, address: str) -> Optional[Contract]:
         """Load Uniswap V2 router contract."""
         # Minimal Uniswap V2 router ABI
@@ -124,7 +141,7 @@ class UniswapV2Client(DEXClient):
             {
                 "inputs": [
                     {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
-                    {"internalType": "uint256[]", "name": "path", "type": "uint256[]"}
+                    {"internalType": "address[]", "name": "path", "type": "address[]"}
                 ],
                 "name": "getAmountsOut",
                 "outputs": [
@@ -136,7 +153,7 @@ class UniswapV2Client(DEXClient):
             {
                 "inputs": [
                     {"internalType": "uint256", "name": "amountOut", "type": "uint256"},
-                    {"internalType": "uint256[]", "name": "path", "type": "uint256[]"}
+                    {"internalType": "address[]", "name": "path", "type": "address[]"}
                 ],
                 "name": "getAmountsIn",
                 "outputs": [
@@ -173,6 +190,20 @@ class UniswapV2Client(DEXClient):
                     {"internalType": "uint256[]", "name": "amounts", "type": "uint256[]"}
                 ],
                 "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "uint256", "name": "amountOutMin", "type": "uint256"},
+                    {"internalType": "address[]", "name": "path", "type": "address[]"},
+                    {"internalType": "address", "name": "to", "type": "address"},
+                    {"internalType": "uint256", "name": "deadline", "type": "uint256"}
+                ],
+                "name": "swapExactETHForTokens",
+                "outputs": [
+                    {"internalType": "uint256[]", "name": "amounts", "type": "uint256[]"}
+                ],
+                "stateMutability": "payable",
                 "type": "function"
             },
             {
@@ -293,27 +324,46 @@ class UniswapV2Client(DEXClient):
             # Calculate deadline
             deadline = self.web3.eth.get_block('latest')['timestamp'] + (deadline_minutes * 60)
 
-            # Build transaction data
-            transaction_data = self.router.functions.swapExactTokensForTokens(
-                amount_in_wei,
-                amount_out_min,
-                path,
-                recipient,
-                deadline
-            ).build_transaction({
-                'from': recipient,  # Will be overwritten by signer
-                'gas': 300000,  # Conservative estimate
-                'gasPrice': self.web3.eth.gas_price,
-            })
+            # Check if this is an ETH -> Token swap (token_in matches WETH address)
+            weth_address = self._get_weth_address()
+            is_native_eth_swap = weth_address is not None and token_in.lower() == weth_address.lower()
+
+            if is_native_eth_swap:
+                # Use swapExactETHForTokens (payable — sends native ETH via msg.value)
+                transaction_data = self.router.functions.swapExactETHForTokens(
+                    amount_out_min,
+                    path,
+                    recipient,
+                    deadline
+                ).build_transaction({
+                    'from': recipient,
+                    'value': amount_in_wei,
+                    'gas': 300000,
+                    'gasPrice': self.web3.eth.gas_price,
+                })
+            else:
+                # Use swapExactTokensForTokens (ERC20 -> ERC20)
+                transaction_data = self.router.functions.swapExactTokensForTokens(
+                    amount_in_wei,
+                    amount_out_min,
+                    path,
+                    recipient,
+                    deadline
+                ).build_transaction({
+                    'from': recipient,
+                    'gas': 300000,
+                    'gasPrice': self.web3.eth.gas_price,
+                })
 
             # Remove 'from' as it will be set by wallet
             if 'from' in transaction_data:
                 del transaction_data['from']
 
             logger.info(
-                f"Built swap: {amount_in} {token_in[:10]}... -> "
+                f"Built swap: {amount_in} {'ETH' if is_native_eth_swap else token_in[:10] + '...'} -> "
                 f"min {amount_out_min/10**18:.6f} {token_out[:10]}... "
                 f"(slippage: {slippage_bps/100}%)"
+                + (" [native ETH]" if is_native_eth_swap else "")
             )
 
             return transaction_data

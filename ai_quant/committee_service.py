@@ -43,9 +43,16 @@ HISTORY_DIR = RESULTS_DIR / "history"
 
 # ── Portfolio Holdings ────────────────────────────────────────────────────
 
+# Crypto → yfinance ticker mapping
+CRYPTO_SYMBOLS = {
+    "BTCUSDT": "BTC-USD",
+    "ETHUSDT": "ETH-USD",
+    "SOLUSDT": "SOL-USD",
+}
+
 
 def load_portfolio() -> list[dict]:
-    """Load portfolio holdings from JSON."""
+    """Load stock portfolio holdings from JSON."""
     if not PORTFOLIO_FILE.exists():
         logger.warning("Portfolio file not found: %s", PORTFOLIO_FILE)
         return _default_portfolio()
@@ -55,6 +62,19 @@ def load_portfolio() -> list[dict]:
     except Exception as e:
         logger.error("Failed to load portfolio: %s", e)
         return _default_portfolio()
+
+
+def load_crypto_portfolio() -> list[dict]:
+    """Load crypto holdings from portfolio.json."""
+    if not PORTFOLIO_FILE.exists():
+        logger.warning("Portfolio file not found: %s", PORTFOLIO_FILE)
+        return []
+    try:
+        data = json.loads(PORTFOLIO_FILE.read_text())
+        return data.get("crypto", [])
+    except Exception as e:
+        logger.error("Failed to load crypto portfolio: %s", e)
+        return []
 
 
 def _default_portfolio() -> list[dict]:
@@ -87,8 +107,10 @@ def _default_portfolio() -> list[dict]:
 OTC_STOCKS = {"3529", "6180", "4506", "3680"}  # 力旺, 橘子, 崇友, 家登
 
 
-def resolve_committee_ticker(code: str) -> str:
-    """Resolve ticker symbol, handling OTC stocks."""
+def resolve_ticker(code: str) -> str:
+    """Resolve ticker symbol, handling OTC stocks and crypto."""
+    if code in CRYPTO_SYMBOLS:
+        return CRYPTO_SYMBOLS[code]
     if code in OTC_STOCKS:
         return code + ".TWO"
     return code  # data_loader.resolve_ticker handles .TW for TSE stocks
@@ -146,7 +168,7 @@ def _ema(values: list, period: int) -> Optional[float]:
 
 def get_technical_signals(code: str, days: int = 90) -> dict:
     """Compute real-time technical indicators from yfinance data."""
-    ticker = resolve_committee_ticker(code)
+    ticker = resolve_ticker(code)
     start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
 
     data = load_single(ticker, start=start, end=date.today().strftime("%Y-%m-%d"), interval="1d")
@@ -252,13 +274,14 @@ def analyze_stock(
     days: int = 90,
     fallback: bool = False,
     deepseek_key: Optional[str] = None,
+    commission: float = 0.001425,
 ) -> dict:
-    """Run the AI committee + technical analysis on a single stock.
+    """Run the AI committee + technical analysis on a single stock or crypto.
 
     Combines backtest-based committee signals with real-time technical
     indicators for a more actionable recommendation.
     """
-    ticker = resolve_committee_ticker(code)
+    ticker = resolve_ticker(code)
     start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
 
     try:
@@ -272,7 +295,7 @@ def analyze_stock(
                 interval="1d",
                 fallback=fallback or not deepseek_key,
                 initial_capital=100000.0,
-                commission=0.001425,
+                commission=commission,
                 use_claude=False,
                 use_macro=True,
                 use_sentiment=not fallback,
@@ -449,27 +472,44 @@ def _extract_latest_signals(result, code: str, name: str) -> list[dict]:
 # ── Batch Analysis ────────────────────────────────────────────────────────
 
 
-def run_daily_analysis(fallback: bool = False) -> list[dict]:
-    """Run the committee on all portfolio holdings."""
+def run_daily_analysis(fallback: bool = False) -> dict:
+    """Run the committee on all portfolio holdings (stocks + crypto)."""
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
     if not deepseek_key:
         logger.warning("DEEPSEEK_API_KEY not set — using fallback mode")
         fallback = True
 
+    # ---- Stocks ----
     holdings = load_portfolio()
-    logger.info("Running daily committee analysis on %d holdings", len(holdings))
-
-    results = []
+    logger.info("Running daily committee analysis on %d stocks", len(holdings))
+    stock_results = []
     for i, h in enumerate(holdings, 1):
-        logger.info("[%d/%d] Analyzing %s (%s)...", i, len(holdings), h["name"], h["code"])
+        logger.info("[%d/%d] Stock %s (%s)...", i, len(holdings), h["name"], h["code"])
         result = analyze_stock(
             code=h["code"],
             name=h["name"],
             days=90,
             fallback=fallback,
             deepseek_key=deepseek_key,
+            commission=0.001425,
         )
-        results.append(result)
+        stock_results.append(result)
+
+    # ---- Crypto ----
+    crypto_holdings = load_crypto_portfolio()
+    logger.info("Running daily committee analysis on %d crypto assets", len(crypto_holdings))
+    crypto_results = []
+    for i, h in enumerate(crypto_holdings, 1):
+        logger.info("[%d/%d] Crypto %s (%s)...", i, len(crypto_holdings), h["name"], h["symbol"])
+        result = analyze_stock(
+            code=h["symbol"],
+            name=h["name"],
+            days=90,
+            fallback=fallback,
+            deepseek_key=deepseek_key,
+            commission=0.001,  # lower commission for DEX trades
+        )
+        crypto_results.append(result)
 
     # Save results
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -478,20 +518,24 @@ def run_daily_analysis(fallback: bool = False) -> list[dict]:
         "date": date.today().isoformat(),
         "generated_at": datetime.now().isoformat(),
         "fallback_mode": fallback,
-        "total_stocks": len(results),
-        "stocks": results,
-        "summary": generate_summary(results),
+        "total_stocks": len(stock_results),
+        "stocks": stock_results,
+        "summary": generate_summary(stock_results),
+        "total_crypto": len(crypto_results),
+        "crypto": crypto_results,
+        "crypto_summary": generate_summary(crypto_results),
     }
 
     RESULTS_FILE.write_text(json.dumps(output, ensure_ascii=False, indent=2))
 
     # Save history
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-    history_file = HISTORY_DIR / f"{date.today().isoformat()}.json"
+    today_str = date.today().isoformat()
+    history_file = HISTORY_DIR / f"{today_str}.json"
     history_file.write_text(json.dumps(output, ensure_ascii=False, indent=2))
 
-    logger.info("Results saved to %s", RESULTS_FILE)
-    return results
+    logger.info("Results saved to %s (stocks: %d, crypto: %d)", RESULTS_FILE, len(stock_results), len(crypto_results))
+    return output
 
 
 def generate_summary(results: list[dict]) -> dict:
@@ -555,40 +599,60 @@ def main():
 
     # Run daily analysis
     fallback = args.quick or not os.getenv("DEEPSEEK_API_KEY")
-    results = run_daily_analysis(fallback=fallback)
+    output = run_daily_analysis(fallback=fallback)
 
-    summary = generate_summary(results)
+    stock_results = output.get("stocks", [])
+    crypto_results = output.get("crypto", [])
+    summary = output.get("summary", {})
+    crypto_summary = output.get("crypto_summary", {})
+
     print("\n" + "=" * 60)
     print(f"  AI 投資委員會 — 每日分析報告 ({date.today()})")
     print("=" * 60)
-    print(f"  強力買入: {summary['strong_buy_count']} 檔")
-    print(f"  買入:     {summary['buy_count']} 檔")
-    print(f"  持有:     {summary['hold_count']} 檔")
-    print(f"  賣出:     {summary['sell_count']} 檔")
-    print(f"  強力賣出: {summary['strong_sell_count']} 檔")
-    if summary['error_count']:
-        print(f"  分析失敗: {summary['error_count']} 檔")
+    print(f"  台股:")
+    print(f"    強力買入: {summary.get('strong_buy_count', 0)} 檔")
+    print(f"    買入:     {summary.get('buy_count', 0)} 檔")
+    print(f"    持有:     {summary.get('hold_count', 0)} 檔")
+    print(f"    賣出:     {summary.get('sell_count', 0)} 檔")
+    print(f"    強力賣出: {summary.get('strong_sell_count', 0)} 檔")
+    if summary.get('error_count'):
+        print(f"    分析失敗: {summary['error_count']} 檔")
+    print(f"  加密貨幣:")
+    print(f"    買入:     {crypto_summary.get('buy_count', 0)} 檔")
+    print(f"    持有:     {crypto_summary.get('hold_count', 0)} 檔")
+    print(f"    賣出:     {crypto_summary.get('sell_count', 0)} 檔")
+    if crypto_summary.get('error_count'):
+        print(f"    分析失敗: {crypto_summary['error_count']} 檔")
     print("=" * 60)
 
-    if summary['strong_buys']:
-        print("\n🟢 強力買入建議:")
+    if summary.get('strong_buys'):
+        print("\n🟢 台股強力買入建議:")
         for s in summary['strong_buys']:
             print(f"  {s['code']} {s['name']}")
-    if summary['buys']:
-        print("\n🔵 買入建議:")
+    if summary.get('buys'):
+        print("\n🔵 台股買入建議:")
         for s in summary['buys']:
             print(f"  {s['code']} {s['name']}")
-    if summary['sells']:
-        print("\n🔴 賣出建議:")
+    if summary.get('sells'):
+        print("\n🔴 台股賣出建議:")
         for s in summary['sells']:
             print(f"  {s['code']} {s['name']}")
-    if summary['strong_sells']:
-        print("\n⛔ 強力賣出建議:")
+    if summary.get('strong_sells'):
+        print("\n⛔ 台股強力賣出建議:")
         for s in summary['strong_sells']:
             print(f"  {s['code']} {s['name']}")
 
+    if crypto_summary.get('buys'):
+        print("\n🟢 加密貨幣買入建議:")
+        for s in crypto_summary['buys']:
+            print(f"  {s['code']} {s['name']}")
+    if crypto_summary.get('sells'):
+        print("\n🔴 加密貨幣賣出建議:")
+        for s in crypto_summary['sells']:
+            print(f"  {s['code']} {s['name']}")
+
     if args.json:
-        print(json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=2))
+        print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

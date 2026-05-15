@@ -16,11 +16,36 @@ from .database import (
     get_onchain_database
 )
 from bot.config_web3 import get_web3_config
-from quant.backtest.strategies.base_strategies import (
-    BaseStrategy, create_strategy,
-    MovingAverageCrossover, BollingerBandsStrategy,
-    RSIStrategy, MACDStrategy, CombinedStrategy
-)
+
+# Quant strategies — optional import (stub if quant module not installed)
+try:
+    from quant.backtest.strategies.base_strategies import (
+        BaseStrategy, create_strategy,
+        MovingAverageCrossover, BollingerBandsStrategy,
+        RSIStrategy, MACDStrategy, CombinedStrategy
+    )
+except ImportError:
+    # Stub classes for when quant module is not available
+    class BaseStrategy:
+        def __init__(self, *args, **kwargs): pass
+
+    class MovingAverageCrossover(BaseStrategy):
+        def __init__(self, *args, **kwargs): pass
+
+    class BollingerBandsStrategy(BaseStrategy):
+        def __init__(self, *args, **kwargs): pass
+
+    class RSIStrategy(BaseStrategy):
+        def __init__(self, *args, **kwargs): pass
+
+    class MACDStrategy(BaseStrategy):
+        def __init__(self, *args, **kwargs): pass
+
+    class CombinedStrategy(BaseStrategy):
+        def __init__(self, *args, **kwargs): pass
+
+    def create_strategy(*args, **kwargs):
+        return None
 
 logger = logging.getLogger(__name__)
 
