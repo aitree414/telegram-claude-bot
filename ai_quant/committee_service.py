@@ -50,9 +50,20 @@ CRYPTO_SYMBOLS = {
     "SOLUSDT": "SOL-USD",
 }
 
+# Default US stocks for committee analysis
+US_STOCKS = [
+    {"code": "AAPL", "name": "Apple", "shares": 0, "cost": 0},
+    {"code": "NVDA", "name": "NVIDIA", "shares": 0, "cost": 0},
+    {"code": "MSFT", "name": "Microsoft", "shares": 0, "cost": 0},
+    {"code": "AMZN", "name": "Amazon", "shares": 0, "cost": 0},
+    {"code": "GOOGL", "name": "Alphabet", "shares": 0, "cost": 0},
+    {"code": "TSLA", "name": "Tesla", "shares": 0, "cost": 0},
+    {"code": "META", "name": "Meta", "shares": 0, "cost": 0},
+]
+
 
 def load_portfolio() -> list[dict]:
-    """Load stock portfolio holdings from JSON."""
+    """Load Taiwan stock portfolio holdings from JSON."""
     if not PORTFOLIO_FILE.exists():
         logger.warning("Portfolio file not found: %s", PORTFOLIO_FILE)
         return _default_portfolio()
@@ -62,6 +73,18 @@ def load_portfolio() -> list[dict]:
     except Exception as e:
         logger.error("Failed to load portfolio: %s", e)
         return _default_portfolio()
+
+
+def load_us_portfolio() -> list[dict]:
+    """Load US stock holdings from JSON or return defaults."""
+    if not PORTFOLIO_FILE.exists():
+        return US_STOCKS
+    try:
+        data = json.loads(PORTFOLIO_FILE.read_text())
+        return data.get("us_stocks", US_STOCKS)
+    except Exception as e:
+        logger.error("Failed to load US portfolio: %s", e)
+        return US_STOCKS
 
 
 def load_crypto_portfolio() -> list[dict]:
@@ -102,18 +125,14 @@ def _default_portfolio() -> list[dict]:
 
 # ── Committee Analysis ────────────────────────────────────────────────────
 
-
-# OTC stocks (櫃買) use .TWO suffix instead of .TW
-OTC_STOCKS = {"3529", "6180", "4506", "3680"}  # 力旺, 橘子, 崇友, 家登
+from bot.stock import resolve_stock_symbol as _resolve_stock_symbol
 
 
 def resolve_ticker(code: str) -> str:
-    """Resolve ticker symbol, handling OTC stocks and crypto."""
+    """Resolve ticker symbol using unified resolver (handles TW, OTC, US, crypto)."""
     if code in CRYPTO_SYMBOLS:
         return CRYPTO_SYMBOLS[code]
-    if code in OTC_STOCKS:
-        return code + ".TWO"
-    return code  # data_loader.resolve_ticker handles .TW for TSE stocks
+    return _resolve_stock_symbol(code)
 
 
 # ── Technical Analysis Helpers ─────────────────────────────────────────────
@@ -473,18 +492,18 @@ def _extract_latest_signals(result, code: str, name: str) -> list[dict]:
 
 
 def run_daily_analysis(fallback: bool = False) -> dict:
-    """Run the committee on all portfolio holdings (stocks + crypto)."""
+    """Run the committee on all portfolio holdings (stocks + crypto + US stocks)."""
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
     if not deepseek_key:
         logger.warning("DEEPSEEK_API_KEY not set — using fallback mode")
         fallback = True
 
-    # ---- Stocks ----
+    # ---- Taiwan Stocks ----
     holdings = load_portfolio()
-    logger.info("Running daily committee analysis on %d stocks", len(holdings))
+    logger.info("Running daily committee analysis on %d Taiwan stocks", len(holdings))
     stock_results = []
     for i, h in enumerate(holdings, 1):
-        logger.info("[%d/%d] Stock %s (%s)...", i, len(holdings), h["name"], h["code"])
+        logger.info("[%d/%d] TW Stock %s (%s)...", i, len(holdings), h["name"], h["code"])
         result = analyze_stock(
             code=h["code"],
             name=h["name"],
@@ -494,6 +513,22 @@ def run_daily_analysis(fallback: bool = False) -> dict:
             commission=0.001425,
         )
         stock_results.append(result)
+
+    # ---- US Stocks ----
+    us_holdings = load_us_portfolio()
+    logger.info("Running daily committee analysis on %d US stocks", len(us_holdings))
+    us_results = []
+    for i, h in enumerate(us_holdings, 1):
+        logger.info("[%d/%d] US Stock %s (%s)...", i, len(us_holdings), h["name"], h["code"])
+        result = analyze_stock(
+            code=h["code"],
+            name=h["name"],
+            days=90,
+            fallback=fallback,
+            deepseek_key=deepseek_key,
+            commission=0.001,
+        )
+        us_results.append(result)
 
     # ---- Crypto ----
     crypto_holdings = load_crypto_portfolio()
@@ -507,7 +542,7 @@ def run_daily_analysis(fallback: bool = False) -> dict:
             days=90,
             fallback=fallback,
             deepseek_key=deepseek_key,
-            commission=0.001,  # lower commission for DEX trades
+            commission=0.001,
         )
         crypto_results.append(result)
 
@@ -521,6 +556,9 @@ def run_daily_analysis(fallback: bool = False) -> dict:
         "total_stocks": len(stock_results),
         "stocks": stock_results,
         "summary": generate_summary(stock_results),
+        "total_us_stocks": len(us_results),
+        "us_stocks": us_results,
+        "us_summary": generate_summary(us_results),
         "total_crypto": len(crypto_results),
         "crypto": crypto_results,
         "crypto_summary": generate_summary(crypto_results),
@@ -534,7 +572,8 @@ def run_daily_analysis(fallback: bool = False) -> dict:
     history_file = HISTORY_DIR / f"{today_str}.json"
     history_file.write_text(json.dumps(output, ensure_ascii=False, indent=2))
 
-    logger.info("Results saved to %s (stocks: %d, crypto: %d)", RESULTS_FILE, len(stock_results), len(crypto_results))
+    logger.info("Results saved to %s (TW: %d, US: %d, crypto: %d)",
+                RESULTS_FILE, len(stock_results), len(us_results), len(crypto_results))
     return output
 
 

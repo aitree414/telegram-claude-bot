@@ -1,43 +1,59 @@
 """CommitteeTrader — executes trades based on AI Investment Committee signals.
 
 Reads the daily committee analysis (daily_signals.json) and maps
-strong_buy/buy → BUY, strong_sell/sell → SELL via the sim portfolio
-(and optionally real broker in the future).
+strong_buy/buy → BUY, strong_sell/sell → SELL via the sim portfolio.
 
-Integrated as a scheduler job that runs after the morning analysis.
+Supports Taiwan stocks (.TW/.TWO), US stocks, and margin leverage.
 """
 
 import json
 import logging
+import os
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
+from bot.stock import resolve_stock_symbol, get_current_price
 from manager.portfolio_risk import PortfolioRiskManager
 
 logger = logging.getLogger(__name__)
 
 COMMITTEE_JSON = Path(__file__).parent.parent / "data" / "committee" / "daily_signals.json"
 STATE_FILE = Path(__file__).parent.parent / "data" / "committee_trader_state.json"
-OTC_STOCKS = {"3529", "6180", "4506", "3680"}  # 力旺, 橘子, 崇友, 家登
+
+# Market categories in the committee JSON
+STOCK_SECTIONS = {
+    "stocks": "TW",
+    "us_stocks": "US",
+}
 
 
 class CommitteeTraderConfig:
     @property
     def max_trades_per_day(self) -> int:
-        return int(__import__("os").environ.get("COMMITTEE_MAX_PER_DAY", "5"))
+        return int(os.environ.get("COMMITTEE_MAX_PER_DAY", "5"))
 
     @property
     def max_position_pct(self) -> float:
-        return float(__import__("os").environ.get("COMMITTEE_MAX_POSITION_PCT", "15"))
+        return float(os.environ.get("COMMITTEE_MAX_POSITION_PCT", "15"))
 
     @property
     def min_confidence(self) -> float:
-        return float(__import__("os").environ.get("COMMITTEE_MIN_CONFIDENCE", "0.5"))
+        return float(os.environ.get("COMMITTEE_MIN_CONFIDENCE", "0.5"))
 
     @property
     def enabled(self) -> bool:
-        return __import__("os").environ.get("COMMITTEE_TRADER_ENABLED", "true").lower() == "true"
+        return os.environ.get("COMMITTEE_TRADER_ENABLED", "true").lower() == "true"
+
+    @property
+    def use_margin(self) -> bool:
+        return os.environ.get("COMMITTEE_USE_MARGIN", "true").lower() == "true"
+
+
+def _is_us_stock(code: str) -> bool:
+    """Detect if a stock code is a US stock (non-numeric, no TW/TWO suffix)."""
+    raw = code.replace(".TW", "").replace(".TWO", "").strip().upper()
+    return not raw.isdigit()
 
 
 class CommitteeTrader:
@@ -81,35 +97,45 @@ class CommitteeTrader:
     def _estimate_portfolio_value(self) -> float:
         if not self.sim_portfolio:
             return 100000.0
-        from bot.stock import get_current_price
         total = 0.0
         for h in self.sim_portfolio.list_holdings():
             price = get_current_price(h["symbol"]) or h["avg_cost"]
             total += price * h["net_shares"]
         return max(total, 10000.0)
 
-    def _get_available_cash(self) -> float:
-        """回傳可用現金（模擬）。初始本金 40 萬，扣掉買入成本加回賣出收入。"""
+    def _get_available_buying_power(self) -> float:
+        """回傳可用買入力（含槓桿）。"""
         if not self.sim_portfolio:
             return 400000.0
+        if self.config.use_margin:
+            return self.sim_portfolio.get_buying_power()
         return self.sim_portfolio.get_cash()
 
-    @staticmethod
-    def _resolve_symbol(code: str) -> str:
-        """Resolve raw stock code to exchange-suffixed symbol."""
-        if code in OTC_STOCKS:
-            return code + ".TWO"
-        return code + ".TW"
-
     def _get_current_price(self, code: str) -> Optional[float]:
-        """Get latest price for a Taiwan stock code."""
-        from bot.stock import get_current_price
-        symbol = self._resolve_symbol(code)
+        """Get latest price for any stock (TW or US)."""
+        symbol = resolve_stock_symbol(code)
         price = get_current_price(symbol)
         if price:
             return price
-        # Fallback: try raw code or other suffixes
         return get_current_price(code)
+
+    def _collect_signals(self, data: dict) -> list[tuple]:
+        """Collect actionable signals from all stock sections in committee JSON.
+
+        Returns list of (stock_dict, action, confidence, market) tuples.
+        """
+        signals = []
+        for section_key, market in STOCK_SECTIONS.items():
+            stocks = data.get(section_key, [])
+            for s in stocks:
+                if s.get("status") != "ok":
+                    continue
+                sig = s.get("signals", [{}])[0]
+                action = sig.get("action", "hold")
+                confidence = sig.get("confidence", 0)
+                if action in ("strong_sell", "sell", "strong_buy", "buy"):
+                    signals.append((s, action, confidence, market))
+        return signals
 
     def run_cycle(self) -> list[dict]:
         """Read committee signals and execute trades.
@@ -135,35 +161,23 @@ class CommitteeTrader:
             logger.error("Failed to read committee JSON: %s", e)
             return []
 
-        stocks = data.get("stocks", [])
-        if not stocks:
+        signals = self._collect_signals(data)
+        if not signals:
             return []
 
-        summary = data.get("summary", {})
+        # Priority order: strong_sell > sell > strong_buy > buy
+        order = {"strong_sell": 0, "sell": 1, "strong_buy": 2, "buy": 3}
+        signals.sort(key=lambda x: (order.get(x[1], 9), -x[2]))
+
         actions = []
 
-        # Priority order: strong_sell > sell > strong_buy > buy
-        priority_stocks = []
-        for s in stocks:
-            if s.get("status") != "ok":
-                continue
-            sig = s.get("signals", [{}])[0]
-            action = sig.get("action", "hold")
-            confidence = sig.get("confidence", 0)
-            if action in ("strong_sell", "sell", "strong_buy", "buy"):
-                priority_stocks.append((s, action, confidence))
-
-        # Sort: strong_sell first, then sell, then strong_buy, then buy
-        order = {"strong_sell": 0, "sell": 1, "strong_buy": 2, "buy": 3}
-        priority_stocks.sort(key=lambda x: (order.get(x[1], 9), -x[2]))
-
-        for s, action, confidence in priority_stocks:
+        for s, action, confidence, market in signals:
             if self._state["trades_today"] >= self.config.max_trades_per_day:
                 break
 
             code = s["code"]
             name = s["name"]
-            symbol = self._resolve_symbol(code)
+            symbol = resolve_stock_symbol(code)
             price = self._get_current_price(code)
             if not price or price <= 0:
                 logger.warning("No price for %s (%s), skipping", code, name)
@@ -173,25 +187,22 @@ class CommitteeTrader:
             is_sell = action in ("sell", "strong_sell")
 
             if is_buy:
-                # Check confidence threshold
                 if confidence < self.config.min_confidence:
                     logger.info("Skipping BUY %s: confidence %.2f < threshold %.2f",
                                 code, confidence, self.config.min_confidence)
                     continue
 
-                # Risk check: position size limited by portfolio % AND available cash
                 current_value = self._estimate_portfolio_value()
                 position_value = current_value * (self.config.max_position_pct / 100)
-                available_cash = self._get_available_cash()
-                position_value = min(position_value, available_cash)
+                available_bp = self._get_available_buying_power()
+                position_value = min(position_value, available_bp)
                 if position_value < price:
-                    logger.info("BUY %s skipped: position_value %.0f < price %.2f (cash %.0f)",
-                                code, position_value, price, available_cash)
+                    logger.info("BUY %s skipped: position_value %.0f < price %.2f (bp %.0f)",
+                                code, position_value, price, available_bp)
                     continue
                 shares = max(1, int(position_value / price))
 
                 if self.sim_portfolio:
-                    # Check if already held (use resolved symbol)
                     holdings = self.sim_portfolio.list_holdings()
                     existing = next((h for h in holdings if h["symbol"] == symbol), None)
                     if existing and existing["net_shares"] > 0:
@@ -210,17 +221,17 @@ class CommitteeTrader:
                         actions.append({"symbol": symbol, "name": name, "action": "BLOCKED", "reason": reason})
                         continue
 
-                    note = f"committee: {action} conf {confidence:.0%}"
+                    note = f"committee: {action} conf {confidence:.0%} ({market})"
                     tid = self.sim_portfolio.buy(symbol, shares, price, note)
                     self._state["trades_today"] += 1
                     self.risk_manager.record_trade(is_stock=True)
-                    logger.info("📊 Committee BUY %s (%s) x%d @ %.2f  (trade #%d)",
-                                code, name, shares, price, tid)
+                    logger.info("📊 Committee BUY %s (%s) x%d @ %.2f  (trade #%d, %s)",
+                                code, name, shares, price, tid, market)
                     actions.append({
                         "symbol": symbol, "name": name, "action": "BUY",
                         "shares": shares, "price": price,
                         "confidence": confidence, "trade_id": tid,
-                        "reason": f"{action} signal",
+                        "reason": f"{action} signal ({market})",
                     })
 
             elif is_sell:
@@ -234,7 +245,6 @@ class CommitteeTrader:
                     continue
 
                 sell_shares = holding["net_shares"]
-                # For strong_sell, sell all. For sell, sell half.
                 if action == "sell":
                     sell_shares = max(1, int(sell_shares / 2))
 
@@ -249,7 +259,7 @@ class CommitteeTrader:
                         "symbol": code, "name": name, "action": "SELL",
                         "shares": sell_shares, "price": price,
                         "pnl": pnl, "confidence": confidence,
-                        "reason": f"{action} signal",
+                        "reason": f"{action} signal ({market})",
                     })
                 else:
                     logger.warning("SELL %s failed: %s", code, sell_result.get("error"))

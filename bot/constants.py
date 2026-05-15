@@ -7,8 +7,8 @@ across different parts of the application.
 import os
 
 # Model configuration (override via OPENAI_MODEL env var)
-# Uses gpt-4o by default; also works with gpt-4o-mini, gpt-4-turbo, etc.
-API_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+# DeepSeek models: deepseek-v4-pro or deepseek-v4-flash
+API_MODEL = os.environ.get("OPENAI_MODEL", "deepseek-v4-pro")
 
 # Vision-capable model for image analysis (override via VISION_MODEL env var)
 # Falls back to API_MODEL if not set

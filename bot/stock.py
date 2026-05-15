@@ -15,11 +15,39 @@ TAIWAN_WATCHLIST = [
     "2395", "3034", "4938", "2324",
 ]
 
+US_WATCHLIST = [
+    "AAPL", "NVDA", "MSFT", "AMZN", "GOOGL", "TSLA", "META",
+]
+
+# Taiwan OTC stocks use .TWO suffix instead of .TW
+OTC_STOCKS = {"3529", "6180", "4506", "3680"}
+
+_KNOWN_SUFFIXES = {".TW", ".TWO", ".HK", ".SS", ".SZ", ".TO", ".L", ".DE", ".PA"}
+
+
+def resolve_stock_symbol(code: str) -> str:
+    """Unified resolution of stock codes to yfinance-compatible symbols.
+
+    - Numeric Taiwan codes (2330) → 2330.TW
+    - Known OTC stocks (3529) → 3529.TWO
+    - Already-suffixed (2330.TW, AAPL) → unchanged
+    - Non-numeric (AAPL, NVDA) → treated as US stock, returned as-is
+    """
+    code = code.strip().upper()
+    # Already has a known suffix
+    if any(code.endswith(s) for s in _KNOWN_SUFFIXES):
+        return code
+    # Remove any .TW/.TWO that may be partially attached
+    raw = code.replace(".TW", "").replace(".TWO", "")
+    if raw in OTC_STOCKS:
+        return raw + ".TWO"
+    if raw.isdigit():
+        return raw + ".TW"
+    return raw  # US stock or other non-Taiwan
+
 
 def _normalize_symbol(symbol: str) -> str:
-    if symbol.isdigit():
-        return f"{symbol}.TW"
-    return symbol.upper()
+    return resolve_stock_symbol(symbol)
 
 
 def _format_market_cap(market_cap: float, currency: str) -> str:

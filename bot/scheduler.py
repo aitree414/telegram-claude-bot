@@ -7,6 +7,8 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .alerts import AlertManager
+from .portfolio_managers import StopLossManager
+from .portfolio import PortfolioManager
 from .stock import get_current_price, _normalize_symbol, TAIWAN_WATCHLIST
 from .poly_analyzer import get_ai_recommendations
 from .session_manager import get_session_manager
@@ -68,6 +70,76 @@ def setup_scheduler(
                     alert_manager.mark_triggered(alert["id"])
             except Exception:
                 logger.exception(f"檢查提醒失敗：{alert}")
+
+    # Stop-loss / take-profit auto-check (every 5 minutes)
+    async def check_stop_loss_alerts() -> None:
+        try:
+            sl_mgr = StopLossManager(simulation=True)
+            pm = PortfolioManager(simulation=True)
+            active = sl_mgr.list_active()
+            if not active:
+                return
+
+            symbols = list({i["symbol"] for i in active})
+            prices = {}
+            for sym in symbols:
+                price = get_current_price(sym)
+                if price is not None:
+                    prices[sym] = price
+
+            triggered = sl_mgr.check(prices)
+            for t in triggered:
+                sym = t["symbol"]
+                tp = t["_triggered_price"]
+                tp_label = "停損" if t["type"] == "sl" else "停利"
+                shares = t["shares"]
+                # Auto-sell the triggered position
+                result = pm.sell(sym, shares, tp)
+                if result.get("ok"):
+                    msg = (
+                        f"⚠️ {tp_label}自動執行！\n\n"
+                        f"{sym} @ {tp:.2f} x {shares} 股\n"
+                        f"已實現損益：{result['realized_pnl']:+.2f} ({result['realized_pnl_pct']:+.2f}%)"
+                    )
+                else:
+                    msg = (
+                        f"⚠️ {tp_label}觸發但賣出失敗：{result.get('error', '')}\n\n"
+                        f"{sym} 觸發價 {t['trigger_price']}，現價 {tp:.2f}"
+                    )
+                # Notify via Telegram if chat_id available
+                if chat_id:
+                    await app.bot.send_message(chat_id=chat_id, text=msg)
+        except Exception:
+            logger.exception("停損/停利檢查失敗")
+
+    # Daily portfolio performance snapshot (every day at 16:30)
+    async def record_daily_performance() -> None:
+        try:
+            pm = PortfolioManager(simulation=True)
+            if pm._initial_capital <= 0:
+                return
+
+            holdings = pm.list_holdings()
+            total_holdings_value = 0.0
+            for h in holdings:
+                price = get_current_price(h["symbol"])
+                if price is not None:
+                    total_holdings_value += h["net_shares"] * price
+
+            futures_list = pm.list_futures()
+            futures_upnl = sum(f.get("unrealized_pnl", 0) for f in futures_list)
+
+            cash = pm.get_cash()
+            pm.performance_tracker.record_snapshot(
+                initial_capital=pm._initial_capital,
+                cash=cash,
+                holdings_value=total_holdings_value,
+                realized_pnl=pm._realized_pnl,
+                futures_upnl=futures_upnl,
+            )
+            logger.info("每日績效快照已記錄")
+        except Exception:
+            logger.exception("記錄績效快照失敗")
 
     async def send_poly_picks() -> None:
         if not chat_id:
@@ -233,7 +305,9 @@ def setup_scheduler(
 
         scheduler.add_job(crypto_committee_trader_cycle, "cron", hour=7, minute=45, day_of_week="mon-fri")
     scheduler.add_job(check_price_alerts, "interval", minutes=5)
+    scheduler.add_job(check_stop_loss_alerts, "interval", minutes=5)
     scheduler.add_job(archive_old_sessions, "cron", hour=3, minute=0)  # Daily at 3 AM
+    scheduler.add_job(record_daily_performance, "cron", hour=16, minute=30)  # Daily snapshot
 
     # Auto-trader (interval from config, default 60 min)
     from manager.auto_trader import AutoTraderConfig
@@ -251,5 +325,10 @@ def setup_scheduler(
         interval = int(os.environ.get("POLYCOPY_SCAN_INTERVAL", "15"))
         scheduler.add_job(polymarket_copy_trade_cycle, "interval", minutes=interval)
         logger.info("Polymarket copy trader scheduled (every %d min)", interval)
+
+    # Startup performance snapshot (delayed by 30s)
+    from datetime import timedelta, timezone
+    startup_time = datetime.now(timezone.utc).astimezone() + timedelta(seconds=30)
+    scheduler.add_job(record_daily_performance, "date", run_date=startup_time)
 
     return scheduler
