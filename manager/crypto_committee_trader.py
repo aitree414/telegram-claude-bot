@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 COMMITTEE_JSON = Path(__file__).parent.parent / "data" / "committee" / "daily_signals.json"
 STATE_FILE = Path(__file__).parent.parent / "data" / "crypto_committee_trader_state.json"
 
+# Hard floor: on-chain trades below this confidence are NEVER executed.
+# Real money needs a higher bar — this cannot be overridden by env vars.
+HARD_CONFIDENCE_FLOOR = 0.60
+
 
 class CryptoCommitteeTraderConfig:
     @property
@@ -143,9 +147,10 @@ class CryptoCommitteeTrader:
                 continue
 
             if is_buy:
-                if confidence < self.config.min_confidence:
-                    logger.info("Skipping crypto BUY %s: confidence %.2f < threshold %.2f",
-                                symbol, confidence, self.config.min_confidence)
+                effective_min_conf = max(self.config.min_confidence, HARD_CONFIDENCE_FLOOR)
+                if confidence < effective_min_conf:
+                    logger.info("Skipping crypto BUY %s: confidence %.2f < threshold %.2f (hard floor %.2f)",
+                                symbol, confidence, effective_min_conf, HARD_CONFIDENCE_FLOOR)
                     continue
 
                 amount_eth = self.config.trade_amount_eth
@@ -160,13 +165,14 @@ class CryptoCommitteeTrader:
                     })
                     self._state["trades_today"] += 1
                 else:
-                    balance = self.bridge.get_native_balance("ethereum")
-                    if balance is not None and balance < amount_eth * 1.1:
-                        logger.warning("Insufficient ETH balance (%.4f < %.4f), skipping %s",
-                                       balance, amount_eth, symbol)
+                    # Check native gas balance on Polygon (need at least 0.5 POL for gas)
+                    gas_bal = self.bridge.get_native_balance("polygon")
+                    if gas_bal is not None and gas_bal < 0.5:
+                        logger.warning("Insufficient POL gas balance (%.4f < 0.5), skipping %s",
+                                       gas_bal, symbol)
                         actions.append({
                             "symbol": symbol, "name": name, "action": "BLOCKED",
-                            "reason": f"insufficient_ETH_balance_{balance:.4f}",
+                            "reason": f"insufficient_POL_gas_{gas_bal:.4f}",
                         })
                         continue
 
@@ -196,6 +202,12 @@ class CryptoCommitteeTrader:
                         })
 
             elif is_sell:
+                effective_min_conf = max(self.config.min_confidence, HARD_CONFIDENCE_FLOOR)
+                if confidence < effective_min_conf:
+                    logger.info("Skipping crypto SELL %s: confidence %.2f < threshold %.2f (hard floor %.2f)",
+                                symbol, confidence, effective_min_conf, HARD_CONFIDENCE_FLOOR)
+                    continue
+
                 if self.config.dry_run:
                     logger.info("DRY-RUN crypto SELL %s (%s)  conf=%.0f%%",
                                 symbol, name, confidence * 100)

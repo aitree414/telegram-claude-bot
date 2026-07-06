@@ -409,7 +409,8 @@ class PerformanceTracker:
         Returns the snapshot dict.
         """
         with self._lock:
-            equity = cash + holdings_value + realized_pnl
+            # equity = cash + holdings at market value (realized_pnl is already in cash)
+            equity = cash + holdings_value
             total_pnl = equity - initial_capital + futures_upnl
             pnl_pct = (total_pnl / initial_capital * 100) if initial_capital > 0 else 0.0
 

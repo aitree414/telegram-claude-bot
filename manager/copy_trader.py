@@ -1,8 +1,11 @@
 """Copy trading on Polymarket — follows leader wallets and mirrors positions.
 
-Detects new positions by polling Polygonscan for ERC1155 transfers of
-Polymarket outcome tokens. Resolves token IDs to market data via the
-Gamma API, then mirrors trades via the CLOB at a configurable ratio.
+Polls the Polymarket Data API (``/trades?maker={address}``) for each leader
+wallet to detect new trades with full market metadata (title, slug, price,
+side, outcome).  Mirrors trades via the CLOB at a configurable ratio.
+
+This avoids the complex on-chain token ID → market resolution problem
+since the Data API returns market data directly.
 """
 
 from __future__ import annotations
@@ -10,19 +13,16 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from bot.polymarket_clob import PolymarketCLOB, MarketData
-from bot.polygonscan_client import PolygonscanClient
+from bot.polymarket_clob import PolymarketCLOB
+from manager.poly_whale_watcher import WhaleWatcher
 
 logger = logging.getLogger(__name__)
 
-# Contracts on Polygon mainnet
-CTF_EXCHANGE = "0x4D97DCd97eC945f5cf4732E76B5Cce92f41C1b3b"
-NEG_RISK_ADAPTER = "0xC5d563A36AE78145C45a50134d48A1215220f80a"
+DATA_API = "https://data-api.polymarket.com"
 
 
 class CopyTraderConfig:
@@ -54,29 +54,22 @@ class CopyTraderConfig:
         return int(os.environ.get("POLYCOPY_SCAN_INTERVAL", "15"))
 
     @property
-    def start_block(self) -> int:
-        return int(os.environ.get("POLYCOPY_START_BLOCK", "0"))
-
-    @property
     def dry_run(self) -> bool:
         return os.environ.get("POLYCOPY_DRY_RUN", "false").lower() == "true"
 
 
 class CopyTrader:
-    """Scans leader wallets for new Polymarket positions and mirrors them.
+    """Follows leader wallets via the Polymarket Data API and mirrors trades.
 
     State persists to ``data/copy_trader_state.json``, tracking
-    ``last_block`` per leader to avoid re-processing transfers.
+    ``last_tx`` per leader to avoid re-processing trades.
     """
 
-    def __init__(self, clob: Optional[PolymarketCLOB] = None,
-                 polygonscan: Optional[PolygonscanClient] = None):
+    def __init__(self, clob: Optional[PolymarketCLOB] = None):
         self.config = CopyTraderConfig()
         self.clob = clob or PolymarketCLOB()
-        self.polygonscan = polygonscan or PolygonscanClient(
-            api_key=os.environ.get("POLYGONSCAN_API_KEY", "")
-        )
         self._state_file = Path(__file__).parent.parent / "data" / "copy_trader_state.json"
+        self._slug_token_cache: dict[str, list[str]] = {}  # slug -> CLOB token IDs
         self._state = self._load_state()
 
     # ── State ───────────────────────────────────
@@ -94,8 +87,14 @@ class CopyTrader:
             "enabled": self.config.enabled,
             "date": str(date.today()),
             "trades_today": 0,
-            "leaders": {},
+            "leaders": {},  # {address: {"processed_tx": [...], "last_seen_ts": int, "pnl": float, "trades_copied": int}}
+            "blacklist": {},  # {address: {"reason": str, "since": str}}
         }
+
+    # ── Leader quality tracking constants ──────────
+
+    MIN_COPIED_TRADES_FOR_EVAL = 5  # Evaluate leader P&L after this many copied trades
+    MAX_LEADER_LOSS_USDC = -5.0      # Blacklist a leader if total copied P&L drops below this
 
     def _save_state(self) -> None:
         try:
@@ -129,7 +128,7 @@ class CopyTrader:
     # ── Core cycle ──────────────────────────────
 
     def run_cycle(self) -> list[dict]:
-        """Scan all leader wallets and mirror new positions.
+        """Poll Data API for each leader and mirror new trades.
 
         Returns list of executed trade dicts.
         """
@@ -137,30 +136,36 @@ class CopyTrader:
         if not self.is_enabled:
             return []
 
-        leaders = self.config.leaders
+        # Combine manually configured leaders + auto-discovered whales
+        leaders = list(self.config.leaders)
+        try:
+            whale_watcher = WhaleWatcher()
+            auto_leaders = whale_watcher.auto_leaders
+            for addr in auto_leaders:
+                if addr not in leaders:
+                    leaders.append(addr)
+        except Exception:
+            logger.debug("Copy trader: could not load auto leaders", exc_info=True)
+
+        # Filter out blacklisted leaders
+        blacklist = self._state.get("blacklist", {})
+        leaders = [l for l in leaders if l not in blacklist]
+        if blacklist:
+            logger.info("Copy trader: %d leader(s) blacklisted, %d remaining",
+                        len(blacklist), len(leaders))
+
         if not leaders:
-            logger.warning("Copy trader enabled but no POLYCOPY_LEADERS configured")
+            logger.warning("Copy trader enabled but no leaders configured or discovered")
             return []
 
         if self._state["trades_today"] >= self.config.max_daily_trades:
             logger.info("Copy trader: daily trade limit reached")
             return []
 
-        # Pre-fetch active markets for token ID resolution (cache)
-        all_markets = PolymarketCLOB.fetch_active_markets(limit=200)
-        token_to_market: dict[str, tuple[MarketData, int]] = {}
-        for m in all_markets:
-            for i, tid in enumerate(m.token_ids):
-                token_to_market[tid] = (m, i)
-
         all_trades: list[dict] = []
-
         for leader_addr in leaders:
-            trades = self._scan_leader(leader_addr, token_to_market)
+            trades = self._scan_leader(leader_addr)
             all_trades.extend(trades)
-
-            # Be nice to Polygonscan API
-            time.sleep(1)
 
         # Deduplicate by tx hash
         seen_tx = set()
@@ -185,132 +190,125 @@ class CopyTrader:
 
         return executed
 
-    def _scan_leader(self, address: str,
-                     token_to_market: dict[str, tuple[MarketData, int]]) -> list[dict]:
-        """Scan one leader wallet for new transfers.
+    def _scan_leader(self, address: str) -> list[dict]:
+        """Scan one leader wallet for new trades via the Data API.
 
-        Returns list of detected trade dicts.
+        Returns list of detected trade dicts with full market metadata.
         """
+        import httpx
+
         leader_state = self._state["leaders"].get(address, {})
-        last_block = leader_state.get("last_block", self.config.start_block)
-        copied_tx = set(leader_state.get("copied_tx_hashes", []))
+        processed_tx = set(leader_state.get("processed_tx", []))
 
-        # Fetch ERC1155 transfers from CTF exchange
-        transfers = self.polygonscan.get_erc1155_transfers(
-            address=address,
-            contract_address=CTF_EXCHANGE,
-            start_block=last_block,
-        )
-
-        if not transfers:
+        try:
+            resp = httpx.get(
+                f"{DATA_API}/trades",
+                params={"maker": address, "limit": 50},
+                timeout=15, verify=False,
+            )
+            if resp.status_code != 200:
+                logger.warning("Data API returned %d for leader %s",
+                               resp.status_code, address[:10])
+                return []
+            trades_data = resp.json()
+        except Exception as e:
+            logger.error("Data API fetch failed for leader %s: %s", address[:10], e)
             return []
 
-        trades = []
-        max_block = last_block
+        if not trades_data or not isinstance(trades_data, list):
+            return []
 
-        for tx in transfers:
-            tx_hash = tx.get("hash", "")
-            if tx_hash in copied_tx:
+        new_trades = []
+        for t in trades_data:
+            tx_hash = (t.get("transactionHash") or "").lower()
+            if not tx_hash or tx_hash in processed_tx:
                 continue
 
-            from_addr = tx.get("from", "").lower()
-            to_addr = tx.get("to", "").lower()
-            token_id = tx.get("tokenID", "")
-            token_value = int(tx.get("tokenValue", "0"))
-            tx_block = int(tx.get("blockNumber", 0))
-
-            if tx_block > max_block:
-                max_block = tx_block
-
-            if not token_id or token_value == 0:
+            side = (t.get("side") or "").upper()
+            if side not in ("BUY", "SELL"):
                 continue
 
-            # Determine direction
-            addr_lower = address.lower()
-            if to_addr == addr_lower:
-                side = "BUY"
-            elif from_addr == addr_lower:
-                side = "SELL"
-            else:
-                continue  # unrelated transfer
-
-            # Resolve market
-            market_info = token_to_market.get(token_id)
-            if not market_info:
-                # Try to resolve via Gamma fallback
-                market_info = self._resolve_token_fallback(token_id, token_to_market)
-                if market_info:
-                    m, idx = market_info
-                    token_to_market[token_id] = market_info
-
-            if not market_info:
-                logger.debug("Could not resolve token %s for leader %s",
-                             token_id[:16], address[:10])
+            outcome_index = t.get("outcomeIndex")
+            if outcome_index not in (0, 1):
                 continue
 
-            market, outcome_idx = market_info
-            outcome = market.outcomes[outcome_idx] if outcome_idx < len(market.outcomes) else "?"
-            price = market.outcome_prices[outcome_idx] if outcome_idx < len(market.outcome_prices) else 0.5
+            raw_price = t.get("price", 0)
+            try:
+                price = float(raw_price) if raw_price else 0.0
+            except (ValueError, TypeError):
+                price = 0.0
 
-            # Calculate mirror size
-            mirror_value = max(1, int(token_value * self.config.copy_ratio))
-            max_by_budget = int(self.config.max_per_trade_usdc / price) if price > 0 else 10
+            raw_size = t.get("size", 0)
+            try:
+                trade_size = float(raw_size) if raw_size else 0.0
+            except (ValueError, TypeError):
+                trade_size = 0.0
+
+            if price <= 0 or trade_size <= 0:
+                continue
+
+            slug = t.get("slug", "")
+            question = t.get("title", "")
+            outcome = t.get("outcome", "?")
+            timestamp = t.get("timestamp", 0)
+
+            # Resolve CLOB token ID from slug + outcomeIndex
+            token_id = self._get_token_for_slug(slug, outcome_index)
+            if not token_id:
+                logger.debug("Could not resolve token_id for slug=%s", slug[:30])
+                continue
+
+            mirror_value = max(1.0, trade_size * self.config.copy_ratio)
+            max_by_budget = self.config.max_per_trade_usdc / price if price > 0 else 10.0
             mirror_size = min(mirror_value, max_by_budget)
 
-            trades.append({
+            new_trades.append({
                 "leader": address,
                 "tx_hash": tx_hash,
                 "side": side,
                 "outcome": outcome,
                 "token_id": token_id,
-                "size": mirror_size,
-                "price": price,
-                "slug": market.slug,
-                "question": market.question,
-                "block_number": tx_block,
+                "size": round(mirror_size, 2),
+                "price": round(price, 6),
+                "slug": slug,
+                "question": question,
+                "timestamp": timestamp,
             })
+            processed_tx.add(tx_hash)
 
-            copied_tx.add(tx_hash)
+        logger.info("Leader %s: %d new trades", address[:10], len(new_trades))
 
         # Update leader state
-        leader_state["last_block"] = max(last_block, max_block)
-        leader_state["copied_tx_hashes"] = list(copied_tx)
+        leader_state["processed_tx"] = list(processed_tx)
+        leader_state["leader_lookups"] = leader_state.get("leader_lookups", 0) + 1
         self._state["leaders"][address] = leader_state
 
-        return trades
+        return new_trades
 
-    def _resolve_token_fallback(
-        self, token_id: str,
-        cache: dict[str, tuple[MarketData, int]],
-    ) -> Optional[tuple[MarketData, int]]:
-        """Fallback: try to resolve a token ID by scanning fresh Gamma data.
+    def _get_token_for_slug(self, slug: str, outcome_index: int) -> Optional[str]:
+        """Resolve CLOB token ID from a market slug + outcome index.
 
-        Also attempts to parse condition_id from the token_id
-        (high 128 bits of the 256-bit token ID).
+        Results are cached in-memory to avoid redundant Gamma API calls.
         """
-        # Try extracting condition_id (first 32 hex chars = high 128 bits)
-        if len(token_id) >= 32:
-            condition_id = "0x" + token_id[:32]
-            try:
-                market = self.clob.resolve_condition(condition_id)
-                if market:
-                    for i, tid in enumerate(market.token_ids):
-                        if tid == token_id:
-                            cache[token_id] = (market, i)
-                            return cache[token_id]
-                    # Token ID not in resolved market; use index 0
-                    cache[token_id] = (market, 0)
-                    return cache[token_id]
-            except Exception:
-                pass
-
+        if slug not in self._slug_token_cache:
+            md = self.clob.resolve_market(slug)
+            if md and len(md.token_ids) >= 2:
+                self._slug_token_cache[slug] = md.token_ids
+            else:
+                self._slug_token_cache[slug] = []
+        tokens = self._slug_token_cache.get(slug, [])
+        if outcome_index < len(tokens):
+            return tokens[outcome_index]
         return None
 
     def _execute_trade(self, trade: dict) -> Optional[dict]:
         """Execute a mirrored trade via CLOB.
 
-        Respects dry_run config.
+        Respects dry_run config. Tracks cost per leader for P&L evaluation.
         """
+        leader = trade.get("leader", "")
+        trade_cost = trade.get("size", 0) * trade.get("price", 0)
+
         if self.config.dry_run:
             logger.info(
                 "[DRY-RUN Copy] %s %s x%d @ $%.4f (%s)",
@@ -319,6 +317,7 @@ class CopyTrader:
             )
             trade["status"] = "dry_run"
             trade["dry_run"] = True
+            self._track_leader_cost(leader, trade_cost)
             return trade
 
         receipt = self.clob.place_order(
@@ -330,6 +329,7 @@ class CopyTrader:
         if receipt:
             trade["status"] = "executed"
             trade["receipt"] = receipt
+            self._track_leader_cost(leader, trade_cost)
             logger.info(
                 "Copy %s %s %s x%d @ $%.4f (leader: %s)",
                 trade["side"], trade["outcome"], trade["slug"][:30],
@@ -339,6 +339,28 @@ class CopyTrader:
 
         logger.warning("Copy trade execution failed: %s", trade.get("slug", "?")[:30])
         return None
+
+    def _track_leader_cost(self, leader: str, cost: float) -> None:
+        """Track cumulative cost per leader and blacklist chronic losers."""
+        if not leader:
+            return
+        ls = self._state["leaders"].setdefault(leader, {})
+        ls["pnl"] = ls.get("pnl", 0.0) - cost
+        ls["trades_copied"] = ls.get("trades_copied", 0) + 1
+
+        trades_copied = ls["trades_copied"]
+        total_pnl = ls["pnl"]
+        if trades_copied >= MIN_COPIED_TRADES_FOR_EVAL and total_pnl < MAX_LEADER_LOSS_USDC:
+            blacklist = self._state.setdefault("blacklist", {})
+            if leader not in blacklist:
+                blacklist[leader] = {
+                    "reason": f"net loss ${total_pnl:.2f} after {trades_copied} copied trades",
+                    "since": datetime.now().isoformat(),
+                }
+                logger.warning(
+                    "Copy trader: BLACKLISTED leader %s — %s",
+                    leader[:10], blacklist[leader]["reason"],
+                )
 
     # ── Reporting ──────────────────────────────
 
@@ -360,7 +382,7 @@ class CopyTrader:
             lines.append("👤 跟隨錢包：")
             for addr in leaders:
                 ls = self._state["leaders"].get(addr, {})
-                n = len(ls.get("copied_tx_hashes", []))
+                n = len(ls.get("processed_tx", []))
                 lines.append(f"  {addr[:10]}...{addr[-4:]} ({n} 筆已處理)")
         else:
             lines.append("尚未設定跟隨錢包（POLYCOPY_LEADERS）")

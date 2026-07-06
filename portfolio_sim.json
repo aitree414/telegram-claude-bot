@@ -2,112 +2,364 @@
   "trades": [
     {
       "id": 1,
-      "symbol": "2330.TW",
+      "symbol": "2317.TW",
       "action": "buy",
-      "shares": 1,
-      "price": 2250.0,
-      "date": "2026-05-06",
-      "note": "auto: 0.80 conf 80%"
+      "shares": 463,
+      "price": 259.0,
+      "date": "2026-05-25",
+      "note": "committee: strong_buy conf 95% (TW)"
     },
     {
       "id": 2,
-      "symbol": "2882.TW",
+      "symbol": "2454.TW",
       "action": "buy",
-      "shares": 12,
-      "price": 78.7,
-      "date": "2026-05-06",
-      "note": "auto: 0.65 conf 65%"
+      "shares": 28,
+      "price": 4245.0,
+      "date": "2026-05-25",
+      "note": "committee: strong_buy conf 95% (TW)"
     },
     {
       "id": 3,
-      "symbol": "2882.TW",
+      "symbol": "NVDA",
       "action": "buy",
-      "shares": 12,
-      "price": 78.7,
-      "date": "2026-05-06",
-      "note": "auto: 0.65 conf 65%"
+      "shares": 16,
+      "price": 7105.89,
+      "date": "2026-05-25",
+      "note": "committee: strong_buy conf 95% (US)"
     },
     {
       "id": 4,
-      "symbol": "2382.TW",
+      "symbol": "MSFT",
       "action": "buy",
-      "shares": 2,
-      "price": 346.5,
-      "date": "2026-05-07",
-      "note": "auto: 0.42 conf 67%"
+      "shares": 3,
+      "price": 13812.81,
+      "date": "2026-05-25",
+      "note": "committee: strong_buy conf 95% (US)"
     },
     {
       "id": 5,
-      "symbol": "2881.TW",
+      "symbol": "2356.TW",
       "action": "buy",
-      "shares": 10,
-      "price": 92.8,
-      "date": "2026-05-07",
-      "note": "auto: 0.65 conf 65%"
+      "shares": 93,
+      "price": 65.4,
+      "date": "2026-05-25",
+      "note": "committee: strong_buy conf 80% (TW)"
     },
     {
       "id": 6,
-      "symbol": "2882.TW",
-      "action": "buy",
-      "shares": 12,
-      "price": 78.7,
-      "date": "2026-05-07",
-      "note": "auto: 0.81 conf 81%"
+      "symbol": "2317.TW",
+      "action": "sell",
+      "shares": 172,
+      "price": 263.0,
+      "date": "2026-05-25",
+      "note": ""
     },
     {
       "id": 7,
-      "symbol": "2303.TW",
-      "action": "buy",
-      "shares": 10,
-      "price": 96.5,
-      "date": "2026-05-08",
-      "note": "auto: 0.63 conf 63%"
+      "symbol": "2454.TW",
+      "action": "sell",
+      "shares": 11,
+      "price": 4245.0,
+      "date": "2026-05-25",
+      "note": ""
     },
     {
       "id": 8,
-      "symbol": "2881.TW",
-      "action": "buy",
-      "shares": 10,
-      "price": 94.5,
-      "date": "2026-05-08",
-      "note": "auto: 0.81 conf 81%"
+      "symbol": "NVDA",
+      "action": "sell",
+      "shares": 6,
+      "price": 7105.89,
+      "date": "2026-05-25",
+      "note": ""
     },
     {
       "id": 9,
-      "symbol": "2882.TW",
+      "symbol": "2618.TW",
       "action": "buy",
-      "shares": 12,
-      "price": 79.0,
-      "date": "2026-05-08",
-      "note": "auto: 0.67 conf 67%"
+      "shares": 2449,
+      "price": 35.85,
+      "date": "2026-05-25",
+      "note": "committee: strong_buy conf 80% (TW)"
     },
     {
       "id": 10,
-      "symbol": "2330.TW",
+      "symbol": "3042.TW",
       "action": "buy",
-      "shares": 1,
-      "price": 2270.0,
-      "date": "2026-05-14",
-      "note": "auto: 0.66 conf 66%"
+      "shares": 14,
+      "price": 193.5,
+      "date": "2026-05-25",
+      "note": "committee: strong_buy conf 80% (TW)"
     },
     {
       "id": 11,
-      "symbol": "2303.TW",
+      "symbol": "2881.TW",
       "action": "buy",
-      "shares": 10,
-      "price": 108.0,
-      "date": "2026-05-14",
-      "note": "auto: 0.40 conf 67%"
+      "shares": 3,
+      "price": 97.7,
+      "date": "2026-05-26",
+      "note": "committee: strong_buy conf 80% (TW)"
     },
     {
       "id": 12,
+      "symbol": "2330.TW",
+      "action": "buy",
+      "shares": 18,
+      "price": 2310.0,
+      "date": "2026-05-26",
+      "note": "auto: 0.63 conf 63%"
+    },
+    {
+      "id": 13,
+      "symbol": "2382.TW",
+      "action": "buy",
+      "shares": 6,
+      "price": 316.5,
+      "date": "2026-05-26",
+      "note": "auto: 0.64 conf 64%"
+    },
+    {
+      "id": 14,
       "symbol": "2882.TW",
       "action": "buy",
-      "shares": 16,
-      "price": 76.7,
-      "date": "2026-05-14",
-      "note": "auto: 0.66 conf 66%"
+      "shares": 3,
+      "price": 81.5,
+      "date": "2026-05-26",
+      "note": "auto: 0.47 conf 47%"
+    },
+    {
+      "id": 15,
+      "symbol": "2324.TW",
+      "action": "buy",
+      "shares": 1,
+      "price": 34.65,
+      "date": "2026-05-26",
+      "note": "auto: 0.49 conf 49%"
+    },
+    {
+      "id": 16,
+      "symbol": "NVDA",
+      "action": "sell",
+      "shares": 10.0,
+      "price": 7030.8150000000005,
+      "date": "2026-05-27",
+      "note": ""
+    },
+    {
+      "id": 17,
+      "symbol": "META",
+      "action": "buy",
+      "shares": 3,
+      "price": 20113.829999999998,
+      "date": "2026-05-27",
+      "note": "auto: 0.50 conf 50%"
+    },
+    {
+      "id": 18,
+      "symbol": "2330.TW",
+      "action": "buy",
+      "shares": 4,
+      "price": 2305.0,
+      "date": "2026-05-27",
+      "note": "auto: 0.31 conf 31%"
+    },
+    {
+      "id": 19,
+      "symbol": "2317.TW",
+      "action": "buy",
+      "shares": 2,
+      "price": 263.5,
+      "date": "2026-05-27",
+      "note": "auto: 0.59 conf 59%"
+    },
+    {
+      "id": 20,
+      "symbol": "2881.TW",
+      "action": "buy",
+      "shares": 2,
+      "price": 108.0,
+      "date": "2026-05-27",
+      "note": "auto: 0.73 conf 73%"
+    },
+    {
+      "id": 21,
+      "symbol": "RKLB",
+      "action": "buy",
+      "shares": 8,
+      "price": 4735.17,
+      "date": "2026-05-27",
+      "note": "太空投資: Rocket Lab"
+    },
+    {
+      "id": 22,
+      "symbol": "ASTS",
+      "action": "buy",
+      "shares": 8,
+      "price": 4043.82,
+      "date": "2026-05-27",
+      "note": "太空投資: AST SpaceMobile"
+    },
+    {
+      "id": 23,
+      "symbol": "PL",
+      "action": "buy",
+      "shares": 18,
+      "price": 1630.86,
+      "date": "2026-05-27",
+      "note": "太空投資: Planet Labs"
+    },
+    {
+      "id": 24,
+      "symbol": "LUNR",
+      "action": "buy",
+      "shares": 20,
+      "price": 1247.07,
+      "date": "2026-05-27",
+      "note": "太空投資: Intuitive Machines"
+    },
+    {
+      "id": 25,
+      "symbol": "IRDM",
+      "action": "buy",
+      "shares": 14,
+      "price": 1673.76,
+      "date": "2026-05-27",
+      "note": "太空投資: Iridium Communications"
+    },
+    {
+      "id": 26,
+      "symbol": "GSAT",
+      "action": "buy",
+      "shares": 8,
+      "price": 2781.57,
+      "date": "2026-05-27",
+      "note": "太空投資: Globalstar"
+    },
+    {
+      "id": 27,
+      "symbol": "RDW",
+      "action": "buy",
+      "shares": 25,
+      "price": 779.46,
+      "date": "2026-05-27",
+      "note": "太空投資: Redwire"
+    },
+    {
+      "id": 28,
+      "symbol": "CASH",
+      "action": "buy",
+      "shares": 1,
+      "price": 30000,
+      "date": "2026-05-27",
+      "note": "當沖模擬資金"
+    },
+    {
+      "id": 29,
+      "symbol": "META",
+      "action": "buy",
+      "shares": 1,
+      "price": 20311.5,
+      "date": "2026-05-27",
+      "note": "auto: 0.53 conf 53%"
+    },
+    {
+      "id": 30,
+      "symbol": "2317.TW",
+      "action": "buy",
+      "shares": 38,
+      "price": 261.5,
+      "date": "2026-05-28",
+      "note": "auto: 0.60 conf 60%",
+      "fee": 14.160225
+    },
+    {
+      "id": 31,
+      "symbol": "2324.TW",
+      "action": "buy",
+      "shares": 1,
+      "price": 33.6,
+      "date": "2026-05-28",
+      "note": "auto: 0.59 conf 59%",
+      "fee": 1
+    },
+    {
+      "id": 32,
+      "symbol": "2324.TW",
+      "action": "sell",
+      "shares": 1,
+      "price": 44.35,
+      "date": "2026-06-02",
+      "note": "fee 1",
+      "fee": 1
+    },
+    {
+      "id": 33,
+      "symbol": "2382.TW",
+      "action": "sell",
+      "shares": 2.0,
+      "price": 399.0,
+      "date": "2026-06-02",
+      "note": "fee 4",
+      "fee": 3.5311500000000002
+    },
+    {
+      "id": 34,
+      "symbol": "2382.TW",
+      "action": "sell",
+      "shares": 2.0,
+      "price": 429.5,
+      "date": "2026-06-03",
+      "note": "fee 4",
+      "fee": 3.801075
+    },
+    {
+      "id": 35,
+      "symbol": "2454.TW",
+      "action": "sell",
+      "shares": 17.0,
+      "price": 4020.0,
+      "date": "2026-06-08",
+      "note": "fee 302",
+      "fee": 302.4045
+    },
+    {
+      "id": 36,
+      "symbol": "2324.TW",
+      "action": "sell",
+      "shares": 1.0,
+      "price": 38.4,
+      "date": "2026-06-08",
+      "note": "fee 1",
+      "fee": 1
+    },
+    {
+      "id": 37,
+      "symbol": "META",
+      "action": "buy",
+      "shares": 3,
+      "price": 19327.1133,
+      "date": "2026-06-09",
+      "note": "auto: 0.36 conf 67%",
+      "fee": 82.62340935750001
+    },
+    {
+      "id": 38,
+      "symbol": "META",
+      "action": "sell",
+      "shares": 3,
+      "price": 585.39,
+      "date": "2026-06-09",
+      "note": "fee 8",
+      "fee": 7.77105225
     }
   ],
-  "next_id": 13
+  "futures": [],
+  "next_id": 39,
+  "futures_next_id": 1,
+  "initial_capital": 650000.0,
+  "realized_pnl": -61496.71062411749,
+  "futures_realized_pnl": 0.0,
+  "max_leverage": 1.0,
+  "max_leverage_tw": 1.0,
+  "max_leverage_us": 1.0,
+  "max_leverage_futures": 3.0
 }

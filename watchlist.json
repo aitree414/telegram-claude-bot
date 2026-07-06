@@ -2,7 +2,8 @@
   "symbols": [
     "AAPL", "MSFT", "GOOGL", "TSLA", "NVDA",
     "2330.TW", "2317.TW",
-    "COIN", "MSTR", "BITO", "RIOT", "CLSK"
+    "COIN", "MSTR", "BITO", "RIOT", "CLSK",
+    "RKLB", "ASTS", "PL", "LUNR", "MAXR", "GSAT", "RDW"
   ],
   "names": {
     "AAPL": "Apple",
@@ -16,6 +17,13 @@
     "MSTR": "MicroStrategy",
     "BITO": "ProShares Bitcoin ETF",
     "RIOT": "Riot Platforms",
-    "CLSK": "CleanSpark"
+    "CLSK": "CleanSpark",
+    "RKLB": "Rocket Lab",
+    "ASTS": "AST SpaceMobile",
+    "PL": "Planet Labs",
+    "LUNR": "Intuitive Machines",
+    "MAXR": "Maxar Technologies",
+    "GSAT": "Globalstar",
+    "RDW": "Redwire"
   }
 }

@@ -63,6 +63,8 @@ class TransactionBuilder:
         dex_name: str = 'uniswap_v2',
         gas_strategy: str = 'balanced',
         simulate: bool = True,
+        token_in_decimals: int = 18,
+        token_out_decimals: int = 18,
     ) -> Dict[str, Any]:
         """Prepare a fully built swap transaction ready for signing.
 
@@ -76,11 +78,13 @@ class TransactionBuilder:
         Args:
             token_in: Input token address
             token_out: Output token address
-            amount_in: Input amount in ETH units
+            amount_in: Input amount in token units (adjusted for decimals internally)
             slippage_bps: Maximum slippage in basis points (1% = 100)
             dex_name: DEX to use
             gas_strategy: Gas strategy (fast, balanced, economy)
             simulate: Whether to simulate before returning
+            token_in_decimals: Decimals of the input token (default 18 for native/WETH)
+            token_out_decimals: Decimals of the output token (default 18)
 
         Returns:
             Dictionary with transaction details and status
@@ -108,6 +112,8 @@ class TransactionBuilder:
             amount_in=amount_in,
             recipient=wallet_address,
             slippage_bps=slippage,
+            token_in_decimals=token_in_decimals,
+            token_out_decimals=token_out_decimals,
         )
 
         if not tx_data:
@@ -142,9 +148,7 @@ class TransactionBuilder:
             'gas': gas_limit,
             'gasPrice': self.web3.to_wei(max_fee, 'gwei'),
             'nonce': self.web3.eth.get_transaction_count(wallet_address),
-            'chainId': self.config.get_chain_id(
-                dex_name.split('_')[0]  # Extract chain from DEX name (simplified)
-            ) or 1,
+            'chainId': self.web3.eth.chain_id,
         }
 
         result = {
@@ -225,7 +229,7 @@ class TransactionBuilder:
         }]
 
         contract = self.web3.eth.contract(address=token_address, abi=approve_abi)
-        approve_data = contract.encodeABI(fn_name="approve", args=[spender, amount])
+        approve_data = contract.encode_abi("approve", args=[spender, amount])
 
         tx_params = {
             'to': token_address,
@@ -254,7 +258,7 @@ class TransactionBuilder:
             'gas': gas_limit,
             'gasPrice': self.web3.to_wei(max_fee, 'gwei'),
             'nonce': self.web3.eth.get_transaction_count(wallet_address),
-            'chainId': self.config.chain_ids.get('ethereum', 1),
+            'chainId': self.web3.eth.chain_id,
         }
 
         result = {

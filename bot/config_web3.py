@@ -57,7 +57,7 @@ class Web3Config:
         self.max_trade_eth = float(os.environ.get('MAX_TRADE_ETH', '0.1'))
         self.min_trade_eth = float(os.environ.get('MIN_TRADE_ETH', '0.001'))
         self.max_position_eth = float(os.environ.get('MAX_POSITION_ETH', '1.0'))
-        self.default_slippage_bps = int(os.environ.get('DEFAULT_SLIPPAGE_BPS', '500'))  # 5% in basis points
+        self.default_slippage_bps = int(os.environ.get('DEFAULT_SLIPPAGE_BPS', '300'))  # 3% in basis points
 
         # Monitoring configuration
         self.monitor_interval = int(os.environ.get('MONITOR_INTERVAL', '30'))  # seconds
@@ -94,7 +94,16 @@ class Web3Config:
             'sushiswap': {
                 'router': '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F',
                 'factory': '0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac',
-            }
+            },
+            'quickswap': {
+                'router': '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff',
+                'factory': '0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32',
+            },
+        }
+        # Per-chain DEX alias — maps chain to preferred DEX name
+        self.chain_dex_map = {
+            'polygon': 'quickswap',
+            'bsc': 'pancakeswap_v2',
         }
 
         # Blacklist configuration

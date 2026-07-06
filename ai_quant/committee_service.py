@@ -332,8 +332,21 @@ def analyze_stock(
         # ---- Step 2: Real-time technical analysis ----
         tech = get_technical_signals(code, days)
 
-        # ---- Step 3: Combined signal ----
+        # ---- Step 3: News sentiment analysis ----
+        news_headlines = fetch_stock_news(code, name)
+        news = summarize_news_sentiment(news_headlines)
+
+        # ---- Step 4: Combined signal (tech + backtest + news) ----
         final_action, final_confidence, final_reason = _combine_signals(bt_signals, tech)
+
+        # Boost/penalize confidence based on strong news signals
+        if abs(news["score"]) > 0.3:
+            if news["sentiment"] == "positive" and final_action in ("buy", "hold"):
+                final_confidence = min(0.95, final_confidence + 0.1)
+                final_reason += f" | 新聞偏多({news['positive_count']}/{news['count']})"
+            elif news["sentiment"] == "negative" and final_action in ("sell", "hold"):
+                final_confidence = min(0.95, final_confidence + 0.1)
+                final_reason += f" | 新聞偏空({news['negative_count']}/{news['count']})"
 
         combined_signals = [{
             "action": final_action,
@@ -354,6 +367,7 @@ def analyze_stock(
             "signals": combined_signals,
             "metrics": metrics,
             "technical": tech,
+            "news": news,
             "analyzed_at": datetime.now().isoformat(),
         }
 
@@ -369,6 +383,103 @@ def analyze_stock(
             "technical": {},
             "analyzed_at": datetime.now().isoformat(),
         }
+
+
+# ── News Sentiment Analysis ────────────────────────────────────────────────
+
+# Chinese stock news sentiment keywords
+_NEWS_POSITIVE = {
+    "漲", "大漲", "飆漲", "創高", "利多", "獲利", "成長", "突破", "擴產",
+    "訂單", "合作", "併購", "收購", "研發", "新產品", "補助", "政策利多",
+    "降息", "資金", "外資買超", "法人買超", "轉機", "翻身", "整頓",
+}
+_NEWS_NEGATIVE = {
+    "跌", "大跌", "重挫", "創低", "利空", "虧損", "衰退", "裁員", "關廠",
+    "違約", "訴訟", "調查", "罰款", " downgrade", "降評", "賣超",
+    "外資賣超", "法人賣超", "紅色供應鏈", "競爭", "飽和", "庫存過高",
+    "供過於求", "暫停交易", "警示", "處置",
+}
+
+
+def fetch_stock_news(code: str, name: str, max_items: int = 5) -> list[dict]:
+    """Fetch recent news headlines for a Taiwan stock via Google News RSS.
+
+    Returns a list of {title, source, sentiment, score} dicts.
+    Returns empty list on any failure (silent).
+    """
+    import urllib.request
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+
+    headlines = []
+    queries = [f"{name} 股票", f"{code} 台股"]
+    seen = set()
+
+    for query in queries:
+        try:
+            url = (
+                "https://news.google.com/rss/search?"
+                + urllib.parse.urlencode({"q": query, "hl": "zh-TW", "gl": "TW"})
+            )
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                xml_data = resp.read()
+            root = ET.fromstring(xml_data)
+            for item in root.iter("item"):
+                title = item.findtext("title", "")
+                if not title or title in seen:
+                    continue
+                seen.add(title)
+                # Simple sentiment scoring
+                title_lower = title.lower()
+                pos_score = sum(1 for w in _NEWS_POSITIVE if w in title)
+                neg_score = sum(1 for w in _NEWS_NEGATIVE if w in title_lower)
+                net = pos_score - neg_score
+                if net > 0:
+                    sentiment = "positive"
+                    score = min(net / 3, 1.0)
+                elif net < 0:
+                    sentiment = "negative"
+                    score = max(net / 3, -1.0)
+                else:
+                    sentiment = "neutral"
+                    score = 0
+                headlines.append({
+                    "title": title,
+                    "sentiment": sentiment,
+                    "score": round(score, 2),
+                })
+                if len(headlines) >= max_items:
+                    break
+            if len(headlines) >= max_items:
+                break
+        except Exception:
+            continue
+
+    return headlines
+
+
+def summarize_news_sentiment(headlines: list[dict]) -> dict:
+    """Aggregate news headlines into a sentiment summary."""
+    if not headlines:
+        return {"count": 0, "sentiment": "neutral", "score": 0, "headlines": []}
+    avg_score = sum(h["score"] for h in headlines) / len(headlines)
+    pos = sum(1 for h in headlines if h["sentiment"] == "positive")
+    neg = sum(1 for h in headlines if h["sentiment"] == "negative")
+    if avg_score > 0.15:
+        sentiment = "positive"
+    elif avg_score < -0.15:
+        sentiment = "negative"
+    else:
+        sentiment = "neutral"
+    return {
+        "count": len(headlines),
+        "sentiment": sentiment,
+        "score": round(avg_score, 2),
+        "positive_count": pos,
+        "negative_count": neg,
+        "headlines": headlines[:3],
+    }
 
 
 def _combine_signals(bt_signals: list[dict], tech: dict) -> tuple:
@@ -441,33 +552,30 @@ def _extract_latest_signals(result, code: str, name: str) -> list[dict]:
     wr = result.win_rate
     trades = result.total_trades
 
-    # Determine signal based on committee performance
-    # For low-trade fallback, use Sharpe + return thresholds
-    if trades >= 3 and sr > 1.0 and ret > 5:
+    # Minimum trade threshold: signals from fewer than MIN_TRADES trades are
+    # statistically meaningless and must not trigger buy/sell decisions.
+    MIN_TRADES = 20
+
+    if trades < MIN_TRADES:
+        action = "hold"
+        confidence = 0.5
+        reason = f"insufficient data: only {trades} trades (min {MIN_TRADES})"
+
+    elif trades >= MIN_TRADES and sr > 1.0 and ret > 5:
         action = "strong_buy"
         confidence = min(abs(sr) / 2, 0.95)
-        reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%, 勝率 {wr:.0f}%"
-    elif trades >= 2 and sr > 0.5 and ret > 0:
+        reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%, 勝率 {wr:.0f}%, 交易 {trades} 次"
+    elif trades >= MIN_TRADES and sr > 0.5 and ret > 0:
         action = "buy"
         confidence = min(abs(sr) / 3, 0.75)
-        reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%"
-    elif trades == 1 and sr > 2.0 and ret > 3:
-        # Single trade: strong positive → buy
-        action = "buy"
-        confidence = min(abs(sr) / 5, 0.6)
-        reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%, 勝率 {wr:.0f}%"
-    elif trades >= 2 and sr < -0.5 and ret < -3:
+        reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%, 交易 {trades} 次"
+    elif trades >= MIN_TRADES and sr < -0.5 and ret < -3:
         action = "sell"
         confidence = min(abs(sr) / 3, 0.75)
         reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%, 最大回撤 {dd:.1f}%"
-    elif trades >= 3 and sr < -1.0 and ret < -8:
+    elif trades >= MIN_TRADES and sr < -1.0 and ret < -8:
         action = "strong_sell"
         confidence = min(abs(sr) / 2, 0.95)
-        reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%, 回撤 {dd:.1f}%"
-    elif trades == 1 and sr < -5.0 and ret < -5:
-        # Single trade: strong negative → sell
-        action = "sell"
-        confidence = min(abs(sr) / 5, 0.6)
         reason = f"Sharpe {sr:.2f}, 報酬 {ret:+.1f}%, 回撤 {dd:.1f}%"
     else:
         action = "hold"

@@ -23,6 +23,7 @@ from bot.polymarket_clob import PolymarketCLOB
 from strategies.polymarket_base import BaseStrategy, StrategyResult, TradeSignal
 from strategies.polymarket_neh import NEHStrategy
 from strategies.polymarket_arb import PairCostArbStrategy
+from strategies.polymarket_value import ValueHunterStrategy
 from manager.portfolio_risk import PortfolioRiskManager
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,8 @@ class PolymarketTrader:
             strategies.append(NEHStrategy(clob_client=self.clob))
         if self.config.enable_arb:
             strategies.append(PairCostArbStrategy(clob_client=self.clob))
+        # ValueHunter is always active — it's a simple safety net
+        strategies.append(ValueHunterStrategy())
         return strategies
 
     # ── State persistence ──────────────────────

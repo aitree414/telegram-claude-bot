@@ -43,6 +43,10 @@ class TradeExecutor:
     - Trade status tracking
     """
 
+    # Slippage limits per trade type
+    DEFAULT_SLIPPAGE_BPS = 200   # 2% for standard trades
+    MAX_SLIPPAGE_BPS = 1000       # 10% absolute max (reject trade if worse)
+
     def __init__(self, web3: Web3, chain: Chain, config=None, database=None):
         """Initialize trade executor.
 
@@ -73,19 +77,44 @@ class TradeExecutor:
 
         logger.info(f"Trade executor initialized for {chain}")
 
+    # ==================== Price Query ====================
+
+    async def get_current_price(self, token_address: str, dex_name: str = 'quickswap') -> Optional[float]:
+        """Get current token price in ETH from the DEX.
+
+        Used by the orchestrator for SL/TP monitoring.
+        """
+        try:
+            weth = self._get_weth_address()
+            if not weth:
+                return None
+            dex_client = self.tx_builder._get_dex_client(dex_name)
+            if not dex_client:
+                return None
+            # Query price for 1.0 units of the token
+            price_eth, _ = dex_client.get_price(token_address, weth, 1.0)
+            return price_eth
+        except Exception as e:
+            logger.warning(f"Failed to get current price for {token_address[:10]}: {e}")
+            return None
+
     # ==================== Main Execution ====================
 
     async def execute_buy(
         self,
         signal: Signal,
-        dex_name: str = 'uniswap_v2',
+        dex_name: Optional[str] = None,
         gas_strategy: str = 'balanced',
     ) -> Optional[Trade]:
         """Execute a buy trade based on a signal.
 
+        Supports custom base_token (e.g. USDC on Polygon) when set on the signal.
+        For non-native base tokens, approval is handled automatically.
+        DEX is auto-selected per chain (QuickSwap for Polygon, PancakeSwap for BSC).
+
         Args:
             signal: Trading signal
-            dex_name: DEX to use for execution
+            dex_name: DEX to use for execution (auto-selected if None)
             gas_strategy: Gas price strategy
 
         Returns:
@@ -99,27 +128,61 @@ class TradeExecutor:
                                 message="No token address in signal")
             return None
 
-        logger.info(
-            f"Executing buy: {amount_eth:.4f} ETH -> "
-            f"{token_address[:10]}... on {self.chain}"
-        )
+        # Auto-select DEX by chain if not specified
+        if dex_name is None:
+            dex_name = self.config.chain_dex_map.get(
+                self.chain.value if hasattr(self.chain, 'value') else str(self.chain),
+                'uniswap_v2'
+            )
 
-        # Build the swap transaction (ETH -> Token)
         weth_address = self._get_weth_address()
         if not weth_address:
             self._log_execution(signal.id, 'execute_buy', 'failed',
                                 message="Failed to get WETH address")
             return None
 
+        # Use base_token from signal if provided, otherwise use WETH
+        token_in = signal.base_token or weth_address
+        is_native = token_in.lower() == weth_address.lower()
+
+        input_label = "ETH" if is_native else (token_in[:10] + "...")
+        logger.info(
+            f"Executing buy: {amount_eth:.4f} {input_label} -> "
+            f"{token_address[:10]}... on {self.chain}"
+        )
+
+        # For non-native input tokens, ensure approval
+        if not is_native:
+            router_address = self._get_router_for_dex(dex_name)
+            if router_address:
+                from web3 import Web3
+                amount_wei = int(amount_eth * 10 ** 18)  # Will be adjusted for decimals downstream
+                approved = await self.ensure_approval(token_in, router_address, amount_wei)
+                if not approved:
+                    self._log_execution(signal.id, 'execute_buy', 'failed',
+                                        message=f"Failed to approve {token_in[:10]}... for router")
+                    return None
+
         try:
+            # Get token decimals for the token being bought
+            signal_data = getattr(signal, 'signal_data', None) or {}
+            token_in_decimals = signal_data.get("base_token_decimals", 18)
+            token_out_decimals = signal_data.get("token_out_decimals", 18)
+
+            # Determine slippage: use signal's preference or default
+            slippage_bps = getattr(signal, 'signal_data', {}).get('slippage_bps', None) or self.DEFAULT_SLIPPAGE_BPS
+
             # Build and prepare transaction
             prepared = self.tx_builder.prepare_swap_transaction(
-                token_in=weth_address,
+                token_in=token_in,
                 token_out=token_address,
                 amount_in=amount_eth,
+                slippage_bps=slippage_bps,
                 dex_name=dex_name,
                 gas_strategy=gas_strategy,
                 simulate=True,
+                token_in_decimals=token_in_decimals,
+                token_out_decimals=token_out_decimals,
             )
 
             if prepared['status'] == 'simulation_failed':
@@ -237,6 +300,7 @@ class TradeExecutor:
                 token_in=token_address,
                 token_out=weth_address,
                 amount_in=amount_token,
+                slippage_bps=self.DEFAULT_SLIPPAGE_BPS,
                 dex_name=dex_name,
                 gas_strategy=gas_strategy,
                 simulate=True,
@@ -476,13 +540,13 @@ class TradeExecutor:
             gas_used = receipt.get('gas_used', 0)
             tx_hash = receipt.get('hash', '')
 
-            # Calculate gas cost
+            # Calculate gas cost from actual receipt (not simulation estimate)
             gas_price_wei = prepared.get('transaction', {}).get('gasPrice', 0)
-            gas_cost_eth = float(Web3.from_wei(gas_used * gas_price_wei, 'ether'))
+            gas_cost_eth = float(Web3.from_wei(gas_used * gas_price_wei, 'ether')) if gas_used and gas_price_wei else 0.0
 
-            entry_price = prepared.get('gas_estimate', {}).get('total_cost_eth', 0)
-            if entry_price == 0:
-                entry_price = amount_eth  # Fallback to amount
+            # entry_price = amount_eth (what we spent) + gas_cost_eth (tx fee)
+            # This gives the true cost basis including gas
+            entry_price = amount_eth + gas_cost_eth
 
             # Create trade record
             trade_data = {

@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1190 841" width="1190" height="841">
+<style>
+  text { font-family: "Courier New", "Lucida Console", "Microsoft JhengHei", monospace; }
+  .title-lg { fill: #caf0f8; font-size: 18px; font-weight: 700; letter-spacing: 0.05em; }
+  .title { fill: #caf0f8; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+  .subtitle { fill: #90e0ef; font-size: 9px; }
+  .label { fill: #00b4d8; font-size: 9px; font-weight: 600; }
+  .label-sm { fill: #48cae4; font-size: 7px; }
+  .dim-value { fill: #f77f00; font-size: 8px; font-weight: 600; }
+  .dim-line { stroke: #f77f00; stroke-width: 0.5; stroke-dasharray: 3,2; }
+  .dim-ext { stroke: #f77f00; stroke-width: 0.3; }
+  .note { fill: #90e0ef; font-size: 7px; }
+  .note-warn { fill: #f77f00; font-size: 7px; }
+  .geom { fill: none; stroke: #48cae4; stroke-width: 1.2; }
+  .geom-fill { fill: #0d1f3c; stroke: #48cae4; stroke-width: 1; }
+  .wall { fill: #0d1f3c; stroke: #00b4d8; stroke-width: 1.2; }
+  .wall-solid { fill: #1a3a5c; stroke: #00b4d8; stroke-width: 0.8; }
+  .grid-minor { stroke: #112240; stroke-width: 0.3; }
+  .grid-major { stroke: #1a3a5c; stroke-width: 0.5; }
+  .table-header { fill: #0d1f3c; stroke: #00b4d8; stroke-width: 0.5; }
+  .table-cell { fill: #0a1628; stroke: #00b4d8; stroke-width: 0.5; }
+  .bom-text { fill: #caf0f8; font-size: 7px; }
+  .bom-hdr { fill: #00b4d8; font-size: 7px; font-weight: 700; }
+  .hatch { fill: url(#hatch); }
+</style>
+<defs>
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" class="grid-minor"/>
+  </pattern>
+  <pattern id="grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
+    <path d="M 100 0 L 0 0 0 100" fill="none" class="grid-major"/>
+  </pattern>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="6" stroke="#00b4d8" stroke-width="0.2" opacity="0.3"/>
+  </pattern>
+  <marker id="arr-org" markerWidth="5" markerHeight="3.5" refX="4" refY="1.75" orient="auto">
+    <polygon points="0 0, 5 1.75, 0 3.5" fill="#f77f00"/>
+  </marker>
+</defs>
+<rect width="1190" height="841" fill="#0a1628"/>
+<rect width="1190" height="841" fill="url(#grid)"/>
+<rect width="1190" height="841" fill="url(#grid-major)"/>
+<rect x="15" y="15" width="1160" height="811" fill="none" stroke="#00b4d8" stroke-width="1"/>
+<rect x="18" y="18" width="1154" height="805" fill="none" stroke="#00b4d8" stroke-width="0.3"/>
+<text x="595" y="42" text-anchor="middle" class="title-lg">HONG KONG FEDERATION OF LITERARY WORKERS</text>
+<text x="595" y="60" text-anchor="middle" fill="#00b4d8" font-size="14">香港文聯 · 展覽製作圖  HONG KONG CENTRAL LIBRARY</text>
+<text x="595" y="76" text-anchor="middle" class="subtitle">DWG: HKWL-001  |  Rev: v1  |  Scale: 1:100  |  Date: 2026-06-25</text>
+<rect x="40" y="110" width="414" height="324" class="wall" fill="#0a1628" fill-opacity="0.2"/>
+<line x1="25" y1="444" x2="469" y2="444" class="dim-line"/>
+<line x1="40" y1="444" x2="40" y2="456" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="454" y1="444" x2="454" y2="456" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="247.0" y="468" text-anchor="middle" class="dim-value">13.8 m</text>
+<line x1="464" y1="100" x2="464" y2="444" class="dim-line"/>
+<line x1="464" y1="110" x2="459" y2="110" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="464" y1="434" x2="459" y2="434" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="472" y="272.0" text-anchor="middle" transform="rotate(90,472,272.0)" class="dim-value">10.8 m</text>
+<text x="429" y="132" class="label-sm">N</text>
+<polygon points="429,135 424,148 434,148" fill="#00b4d8"/>
+<rect x="40" y="110" width="10" height="324" class="wall-solid"/>
+<text x="45.0" y="272.0" text-anchor="middle" class="label-sm" transform="rotate(-90,45.0,272.0)">L-SHAPED WALL H=3200</text>
+<rect x="40" y="424" width="414" height="10" class="wall-solid"/>
+<text x="247.0" y="429.0" text-anchor="middle" class="label-sm">L-SHAPED WALL H=3200</text>
+<rect x="444" y="134" width="10" height="300" class="wall-solid"/>
+<text x="449.0" y="284" text-anchor="middle" class="label-sm" transform="rotate(-90,449.0,284)">L-SHAPED WALL</text>
+<rect x="90" y="130" width="90" height="10" class="geom-fill" stroke="#06d6a0"/>
+<text x="135.0" y="126" text-anchor="middle" class="label-sm" fill="#06d6a0">PREFACE WALL H2500</text>
+<text x="135.0" y="138" text-anchor="middle" class="label-sm" fill="#06d6a0">前言牆 3000×600mm</text>
+<rect x="50" y="354" width="408" height="70" class="geom" stroke-dasharray="6,3"/>
+<text x="254.0" y="392.0" text-anchor="middle" class="label">TRUSS SYSTEM  H=3800</text>
+<text x="254.0" y="404.0" text-anchor="middle" class="label-sm">框架結構 L13600×W10600</text>
+<rect x="192.0" y="262.0" width="110" height="60" class="geom-fill" stroke="#f77f00"/>
+<text x="247.0" y="287.0" text-anchor="middle" class="label" fill="#f77f00">DOUGONG</text>
+<text x="247.0" y="300.0" text-anchor="middle" class="label-sm" fill="#f77f00">斗拱 H3200</text>
+<text x="247.0" y="312.0" text-anchor="middle" class="label-sm" fill="#f77f00">3706×1532mm</text>
+<rect x="207.0" y="277.0" width="16" height="30" fill="none" stroke="#f77f00" stroke-width="0.4"/>
+<rect x="227.0" y="277.0" width="16" height="30" fill="none" stroke="#f77f00" stroke-width="0.4"/>
+<rect x="247.0" y="277.0" width="16" height="30" fill="none" stroke="#f77f00" stroke-width="0.4"/>
+<rect x="267.0" y="277.0" width="16" height="30" fill="none" stroke="#f77f00" stroke-width="0.4"/>
+<rect x="287.0" y="277.0" width="16" height="30" fill="none" stroke="#f77f00" stroke-width="0.4"/>
+<rect x="327.0" y="272.0" width="148" height="40" class="geom-fill" stroke="#06d6a0"/>
+<text x="401.0" y="295.0" text-anchor="middle" class="label-sm" fill="#06d6a0">CURVED TOP 曲頂 H900 4920×1130mm</text>
+<rect x="447" y="130" width="5" height="36" fill="#0d1f3c" stroke="#48cae4" stroke-width="0.5"/>
+<text x="427" y="150" text-anchor="end" class="label-sm" font-size="6">ACRYLIC WALL ×4</text>
+<rect x="447" y="180" width="5" height="36" fill="#0d1f3c" stroke="#48cae4" stroke-width="0.5"/>
+<text x="427" y="200" text-anchor="end" class="label-sm" font-size="6">ACRYLIC WALL ×4</text>
+<rect x="447" y="230" width="5" height="36" fill="#0d1f3c" stroke="#48cae4" stroke-width="0.5"/>
+<rect x="447" y="280" width="5" height="36" fill="#0d1f3c" stroke="#48cae4" stroke-width="0.5"/>
+<rect x="447" y="330" width="5" height="36" fill="#0d1f3c" stroke="#48cae4" stroke-width="0.5"/>
+<rect x="447" y="380" width="5" height="36" fill="#0d1f3c" stroke="#48cae4" stroke-width="0.5"/>
+<rect x="90" y="210" width="150" height="81" class="geom" fill="url(#hatch)"/>
+<text x="165" y="245" text-anchor="middle" class="label-sm">PLATFORM H300</text>
+<text x="165" y="257" text-anchor="middle" class="label-sm">5000×2700mm</text>
+<circle cx="270" cy="220" r="30" class="geom" fill="url(#hatch)"/>
+<text x="270" y="223" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="315" cy="220" r="30" class="geom" fill="url(#hatch)"/>
+<text x="315" y="223" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="360" cy="220" r="30" class="geom" fill="url(#hatch)"/>
+<text x="360" y="223" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="405" cy="220" r="30" class="geom" fill="url(#hatch)"/>
+<text x="405" y="223" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="270" cy="265" r="30" class="geom" fill="url(#hatch)"/>
+<text x="270" y="268" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="315" cy="265" r="30" class="geom" fill="url(#hatch)"/>
+<text x="315" y="268" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="360" cy="265" r="30" class="geom" fill="url(#hatch)"/>
+<text x="360" y="268" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="405" cy="265" r="30" class="geom" fill="url(#hatch)"/>
+<text x="405" y="268" text-anchor="middle" class="label-sm" font-size="5">RND Ø2000</text>
+<circle cx="270" cy="320" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="305" cy="320" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="340" cy="320" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="375" cy="320" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="410" cy="320" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="445" cy="320" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="270" cy="355" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="305" cy="355" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="340" cy="355" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="375" cy="355" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="410" cy="355" r="15" class="geom" fill="url(#hatch)"/>
+<circle cx="445" cy="355" r="15" class="geom" fill="url(#hatch)"/>
+<rect x="90" y="320" width="108" height="40" class="geom" stroke="#06d6a0" stroke-dasharray="4,2"/>
+<text x="144" y="338" text-anchor="middle" class="label-sm" fill="#06d6a0">CREATIVE DISPLAY</text>
+<text x="144" y="350" text-anchor="middle" class="label-sm" fill="#06d6a0">文創展示區</text>
+<rect x="140" y="110" width="60" height="6" class="geom" stroke="#90e0ef"/>
+<line x1="140" y1="110" x2="140" y2="116" class="geom" stroke="#90e0ef"/>
+<text x="170" y="106" text-anchor="middle" class="label-sm" fill="#90e0ef">ROPE CURTAIN 尼龍繩簾 H2370</text>
+<rect x="210" y="130" width="140" height="180" class="geom" stroke="#f77f00" stroke-dasharray="8,3"/>
+<text x="280" y="215" text-anchor="middle" class="label" fill="#f77f00">PROJECTION</text>
+<text x="280" y="228" text-anchor="middle" class="label" fill="#f77f00">MAPPING AREA</text>
+<text x="280" y="241" text-anchor="middle" class="label-sm" fill="#f77f00">12× 10000Lm Projectors</text>
+<rect x="90.0" y="310" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<rect x="90.0" y="410" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<rect x="190.0" y="310" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<rect x="190.0" y="410" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<rect x="290.0" y="310" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<rect x="290.0" y="410" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<rect x="390.0" y="310" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<rect x="390.0" y="410" width="25" height="10" fill="none" stroke="#90e0ef" stroke-width="0.6"/>
+<text x="520" y="110" class="title">SECTION A-A  S:1/50</text>
+<line x1="540" y1="390" x2="740" y2="390" stroke="#00b4d8" stroke-width="2"/>
+<rect x="625" y="230" width="30" height="160" class="wall-solid" fill="url(#hatch)"/>
+<text x="640" y="225" text-anchor="middle" class="label-sm">WALL H=3200</text>
+<line x1="610" y1="170" x2="670" y2="170" stroke="#48cae4" stroke-width="0.5" stroke-dasharray="4,2"/>
+<text x="675" y="175" class="label-sm">CEILING</text>
+<line x1="680" y1="390" x2="680" y2="170" class="dim-line"/>
+<line x1="680" y1="390" x2="710" y2="390" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="680" y1="170" x2="710" y2="170" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="715" y="282" class="dim-value">Ceiling H=5000</text>
+<rect x="560" y="390" width="160" height="6" class="geom-fill"/>
+<text x="640" y="406" text-anchor="middle" class="note">Wooden Floor Leveling 單層木板找平</text>
+<rect x="570" y="366" width="50" height="24" class="geom" fill="url(#hatch)"/>
+<text x="595" y="378" text-anchor="middle" class="label-sm">PLATFORM</text>
+<text x="595" y="386" text-anchor="middle" class="label-sm">H300</text>
+<text x="520" y="450" class="title">LEGEND 圖例</text>
+<text x="530" y="468" fill="#00b4d8" font-size="10">■</text>
+<text x="550" y="468" class="note">L-Shaped Wall  L型展牆</text>
+<text x="530" y="482" fill="#06d6a0" font-size="10">■</text>
+<text x="550" y="482" class="note">Special Structure 特殊造型</text>
+<text x="530" y="496" fill="#f77f00" font-size="10">■</text>
+<text x="550" y="496" class="note">Dougong / Focus 斗拱/焦點</text>
+<text x="530" y="510" fill="#48cae4" font-size="10">□</text>
+<text x="550" y="510" class="note">Platform / Display 地台/展示</text>
+<text x="530" y="524" fill="#90e0ef" font-size="10">╳</text>
+<text x="550" y="524" class="note">Light Structure 燈光結構</text>
+<text x="40" y="470" class="title">NOTES 備註</text>
+<text x="50" y="484" class="note">1. ALL DIMENSIONS IN MILLIMETERS UNLESS STATED.  除特別標註外所有尺寸為公釐。</text>
+<text x="50" y="497" class="note">2. EXHIBITION VENUE: HONG KONG CENTRAL LIBRARY.  展覽場地：香港中央圖書館。</text>
+<text x="50" y="510" class="note">3. MOVE-IN: 25 AUG 2026 | MOVE-OUT: 7 SEP 2026.  進場 8月25日 | 撤場 9月7日。</text>
+<text x="50" y="523" class="note">4. ALL WALL STRUCTURES H=3200mm, WOODEN FRAME + PAINT FINISH.  所有展牆 H=3200mm，木框架+烤漆。</text>
+<text x="50" y="536" class="note">5. TRUSS SYSTEM: H=3800mm, L=13600mm, W=10600mm, ALUMINUM.  框架鋁合金 Truss。</text>
+<text x="50" y="549" class="note">6. PROJECTION MAPPING: 12× 10000Lm PROJECTORS + SHORT FOCUS LENS.  12台投影機。</text>
+<text x="50" y="562" class="note">7. FLOOR LOADING: MAX 5kN/m².  地面載重。</text>
+<text x="50" y="575" class="note">8. FIRE EXITS MUST REMAIN CLEAR AT ALL TIMES.  消防通道須保持暢通。</text>
+<text x="760" y="110" class="title">DETAIL B  S:1/20</text>
+<text x="760" y="124" class="note">Dougong Bracket Structure  斗拱結構詳圖</text>
+<rect x="865" y="230" width="30" height="80" class="geom" fill="url(#hatch)"/>
+<text x="880" y="220" text-anchor="middle" class="label-sm">COLUMN H=3200</text>
+<rect x="855.0" y="240" width="50" height="10" class="geom-fill" stroke="#f77f00"/>
+<text x="880" y="248" text-anchor="middle" class="label-sm" font-size="5" fill="#f77f00">BRACKET 1</text>
+<rect x="849.0" y="258" width="62" height="10" class="geom-fill" stroke="#f77f00"/>
+<text x="880" y="266" text-anchor="middle" class="label-sm" font-size="5" fill="#f77f00">BRACKET 2</text>
+<rect x="843.0" y="276" width="74" height="10" class="geom-fill" stroke="#f77f00"/>
+<text x="880" y="284" text-anchor="middle" class="label-sm" font-size="5" fill="#f77f00">BRACKET 3</text>
+<rect x="837.0" y="294" width="86" height="10" class="geom-fill" stroke="#f77f00"/>
+<text x="880" y="302" text-anchor="middle" class="label-sm" font-size="5" fill="#f77f00">BRACKET 4</text>
+<rect x="820" y="222" width="120" height="10" class="geom-fill" stroke="#f77f00"/>
+<text x="880" y="229" text-anchor="middle" class="label-sm" fill="#f77f00">TOP BEAM</text>
+<line x1="955" y1="222" x2="955" y2="310" class="dim-line"/>
+<line x1="955" y1="222" x2="960" y2="222" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="955" y1="310" x2="960" y2="310" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="965" y="268" class="dim-value">H=3200</text>
+<circle cx="247.0" cy="292.0" r="12" fill="none" stroke="#f77f00" stroke-width="0.5" stroke-dasharray="3,2"/>
+<text x="247.0" y="295.0" text-anchor="middle" class="note-warn">B</text>
+<polyline points="259.0,292.0 760,230 770,230" fill="none" stroke="#f77f00" stroke-width="0.4" marker-end="url(#arr-org)"/>
+<rect x="700" y="730" width="460" height="85" fill="#0d1f3c" stroke="#00b4d8" stroke-width="1"/>
+<line x1="700" y1="752" x2="1160" y2="752" stroke="#00b4d8" stroke-width="0.5"/>
+<text x="930.0" y="745" text-anchor="middle" class="title" font-size="10">HONG KONG FEDERATION EXHIBITION</text>
+<text x="720" y="766" class="label">DWG NO.:</text>
+<text x="800" y="766" class="bom-text">HKWL-001</text>
+<text x="940" y="766" class="label">REV:</text>
+<text x="1020" y="766" class="bom-text">v1</text>
+<text x="720" y="777" class="label">SCALE:</text>
+<text x="800" y="777" class="bom-text">1:100 / 1:50 / 1:20</text>
+<text x="940" y="777" class="label">DATE:</text>
+<text x="1020" y="777" class="bom-text">2026-06-25</text>
+<text x="720" y="788" class="label">CLIENT:</text>
+<text x="800" y="788" class="bom-text">香港文聯</text>
+<text x="940" y="788" class="label">VENUE:</text>
+<text x="1020" y="788" class="bom-text">HK Central Library</text>
+</svg>

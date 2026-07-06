@@ -25,6 +25,11 @@ from manager.portfolio_risk import PortfolioRiskManager
 from manager.real_trader_bridge import TokenMapper
 from manager.polymarket_trader import PolymarketTrader
 from manager.copy_trader import CopyTrader
+from manager.day_trader_sim import DayTraderSim
+from .research import (
+    research_stock, research_market_news, research_web,
+    research_url, format_research_output,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +159,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/buysim AAPL 10 200 - 模擬買入\n"
         "/sellsim AAPL 5 210 - 模擬賣出\n"
         "/simportfolio - 模擬持倉\n"
+        "\n"
+        "⚡ 當沖模擬 (資金 NT$30,000)：\n"
+        "/daybuy AAPL 2 300 - 當沖買入\n"
+        "/daysell 1 305 - 當沖賣出 (by ID)\n"
+        "/daytrade - 當沖帳戶摘要\n"
+        "/dayideas - Committee 當沖建議\n"
         "\n"
         "🔮 預測市場：\n"
         "/poly - Polymarket 熱門市場\n"
@@ -974,6 +985,40 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         logger.error(f"Failed to record stock command task: {e}")
 
 
+async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Live web research via browser-harness."""
+    if not context.args:
+        await update.message.reply_text(
+            "用法：/research <查詢>\n\n"
+            "範例：\n"
+            "/research TSLA          — 股票研究\n"
+            "/research news          — 市場新聞\n"
+            "/research url <網址>   — 爬取特定網頁\n"
+            "/research <任何查詢>   — 一般網路研究"
+        )
+        return
+
+    query = " ".join(context.args)
+    await update.message.chat.send_action("typing")
+
+    try:
+        if query.lower() == "news":
+            raw = research_market_news()
+        elif query.lower().startswith("url ") or query.lower().startswith("http"):
+            url = query[4:].strip() if query.lower().startswith("url ") else query
+            raw = research_url(url)
+        elif query.isupper() or query.split()[0].isupper():
+            # Looks like a stock symbol
+            raw = research_stock(query.split()[0])
+        else:
+            raw = research_web(query)
+
+        reply = format_research_output(raw, query)
+        await update.message.reply_text(f"🔍 Research: {query}\n\n{reply}")
+    except Exception as e:
+        await update.message.reply_text(f"研究時發生錯誤：{e}")
+        logger.exception(f"Research error for query: {query}")
+
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1585,3 +1630,244 @@ async def tokenmap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "/tokenmap remove <代碼> — 移除映射\n"
             "/tokenmap balance <代碼> — 查詢鏈上餘額"
         )
+
+
+async def performance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show persona prediction accuracy report."""
+    auto_trader = context.bot_data.get("auto_trader")
+    if not auto_trader:
+        await update.message.reply_text("自動交易系統未初始化")
+        return
+
+    tracker = auto_trader.persona_tracker
+    stats = tracker.get_performance_stats()
+    total = tracker.total_predictions
+    verified = tracker.verified_predictions
+
+    lines = ["📊 AI 預測績效報告\n"]
+
+    if verified == 0:
+        lines.append("尚無已驗證的預測記錄。")
+        lines.append("預測會在 auto-trader 掃描後自動記錄，")
+        lines.append("並在次日收盤後驗證。")
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    # Per-persona accuracy
+    lines.append(f"👤 Persona 準確率（共 {verified} 筆驗證）\n")
+    for persona in ["value", "momentum", "growth", "contrarian", "risk_manager"]:
+        p = stats["by_persona"].get(persona)
+        label = PERSONA_NAMES.get(persona, persona)
+        if p and p["total"] > 0:
+            arrow = "🟢" if p["accuracy"] >= 0.6 else ("🟡" if p["accuracy"] >= 0.4 else "🔴")
+            lines.append(
+                f"{arrow} {label}：{p['correct']}/{p['total']} 正確 "
+                f"({p['accuracy']:.0%}) 權重 {p['weight']:.2f}"
+            )
+        else:
+            lines.append(f"⚪ {label}：尚無驗證記錄")
+
+    # Confidence analysis
+    lines.append("\n📈 信心度分析")
+    h = stats["by_confidence"]["high"]
+    l = stats["by_confidence"]["low"]
+    if h["total"] > 0:
+        lines.append(f"  高信心 (≥70)：{h['correct']}/{h['total']} ({h['accuracy']:.0%} 正確)")
+    if l["total"] > 0:
+        lines.append(f"  低信心 (<70)：{l['correct']}/{l['total']} ({l['accuracy']:.0%} 正確)")
+
+    # Best/worst symbols
+    by_symbol = stats["by_symbol"]
+    if by_symbol:
+        sorted_sym = sorted(by_symbol.items(), key=lambda x: x[1]["accuracy"], reverse=True)
+        best = [s for s in sorted_sym if s[1]["total"] >= 3][:3]
+        worst = [s for s in reversed(sorted_sym) if s[1]["total"] >= 3][:3]
+
+        if best:
+            lines.append("\n🥇 最佳標的")
+            for sym, data in best:
+                lines.append(f"  {sym}：{data['correct']}/{data['total']} ({data['accuracy']:.0%})")
+        if worst:
+            lines.append("\n🥴 最差標的")
+            for sym, data in worst:
+                lines.append(f"  {sym}：{data['correct']}/{data['total']} ({data['accuracy']:.0%})")
+
+    # Overall
+    lines.append(f"\n📋 總體準確率：{stats['overall_accuracy']:.0%}")
+    if total > verified:
+        lines.append(f"⏳ 待驗證：{total - verified} 筆")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show real-time market status for TW and US exchanges."""
+    from manager.market_schedule import market_status
+
+    status = market_status()
+
+    lines = ["📈 市場狀態\n"]
+    for key, emoji in [("tw", "🇹🇼"), ("us", "🇺🇸")]:
+        m = status[key]
+        icon = "🟢" if m["is_open"] else "🔴"
+        lines.append(f"{emoji} {m['name']}  {icon}")
+        lines.append(f"  當地時間：{m['local_time']} ({m['timezone']})")
+        lines.append(f"  交易時段：{m['open_time']} – {m['close_time']}")
+        if m["holiday"]:
+            lines.append(f"  🎉 今日休市：{m['holiday']}")
+        else:
+            lines.append(f"  狀態：{'📗 交易中' if m['is_open'] else '📕 已收盤'}")
+        ne = m["next_event"]
+        if ne["minutes_until"] is not None and ne["minutes_until"] > 0:
+            hours = ne["minutes_until"] // 60
+            mins = ne["minutes_until"] % 60
+            if hours > 0:
+                lines.append(f"  ⏰ 下次{ne['label']}：約 {hours} 小時 {mins} 分後")
+            else:
+                lines.append(f"  ⏰ 下次{ne['label']}：約 {mins} 分後")
+        lines.append("")
+
+    await update.message.reply_text("\n".join(lines))
+
+async def daybuy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Day trade buy — open a position with day trading capital."""
+    args = context.args or []
+    if len(args) < 3:
+        await update.message.reply_text(
+            "用法：/daybuy <代碼> <股數> <買入價USD> [備註]\n"
+            "範例：/daybuy AAPL 2 300 committee_signal"
+        )
+        return
+
+    symbol = args[0].upper().strip()
+    try:
+        shares = float(args[1])
+        price_usd = float(args[2])
+    except ValueError:
+        await update.message.reply_text("股數和價格必須是數字")
+        return
+
+    note = " ".join(args[3:]) if len(args) > 3 else ""
+    dt = context.bot_data.get("day_trader_sim")
+    if not dt:
+        await update.message.reply_text("當沖模擬系統未初始化")
+        return
+
+    pid = dt.buy(symbol, shares, price_usd, note)
+    if pid == 0:
+        await update.message.reply_text(
+            "❌ 買入失敗。可能原因：\n"
+            "  1. 現金不足（可用 /daytrade 查看餘額）\n"
+            "  2. 已持有同股未平倉"
+        )
+        return
+
+    await update.message.reply_text(
+        f"⚡ *當沖* 買入記錄！(#{pid})\n"
+        f"{symbol}  {shares:.0f} 股 @ ${price_usd:.2f}"
+        + (f"\n備註：{note}" if note else ""),
+        parse_mode="Markdown",
+    )
+
+
+async def daysell_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Day trade sell — close a position by ID."""
+    args = context.args or []
+    if len(args) < 2:
+        await update.message.reply_text("用法：/daysell <持倉ID> <賣出價USD>")
+        return
+
+    try:
+        position_id = int(args[0])
+        price_usd = float(args[1])
+    except ValueError:
+        await update.message.reply_text("持倉ID和賣出價必須是數字")
+        return
+
+    dt = context.bot_data.get("day_trader_sim")
+    if not dt:
+        await update.message.reply_text("當沖模擬系統未初始化")
+        return
+
+    result = dt.sell(position_id, price_usd)
+    if not result["ok"]:
+        await update.message.reply_text(f"❌ 賣出失敗：{result['error']}")
+        return
+
+    pnl = result["pnl_usd"]
+    pnl_twd = result["pnl_twd"]
+    pnl_pct = result["pnl_pct"]
+    arrow = "▲" if pnl >= 0 else "▼"
+    await update.message.reply_text(
+        f"⚡ *當沖* 賣出完成！\n"
+        f"#{result['trade_id']} {result['symbol']}  {result['shares']:.0f} 股\n"
+        f"進場：${result['entry_price']:.2f} → 出場：${result['exit_price']:.2f}\n"
+        f"已實現損益：{arrow} ${abs(pnl):.2f} ({arrow}{abs(pnl_pct):.2f}%) | {arrow} NT${abs(pnl_twd):,.0f}",
+        parse_mode="Markdown",
+    )
+
+
+async def daytrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show day trading account summary."""
+    dt = context.bot_data.get("day_trader_sim")
+    if not dt:
+        await update.message.reply_text("當沖模擬系統未初始化")
+        return
+
+    await update.message.reply_text(dt.summary_text())
+
+
+async def dayideas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show day trade ideas from AI committee."""
+    dt = context.bot_data.get("day_trader_sim")
+    if not dt:
+        await update.message.reply_text("當沖模擬系統未初始化")
+        return
+
+    ideas = dt.get_trade_ideas(min_confidence=0.6, max_results=5)
+    if not ideas:
+        await update.message.reply_text(
+            "📭 目前沒有 committee 當沖建議。\n"
+            "需等待每日分析完成 (約 07:05)。"
+        )
+        return
+
+    lines = ["🤖 *AI Committee 當沖建議（美股）：*\n"]
+    for i, idea in enumerate(ideas, 1):
+        action_icon = "🟢" if idea["action"] == "strong_buy" else "🟡"
+        confidence_pct = int(idea["confidence"] * 100)
+        lines.append(
+            f"#{i} {action_icon} *{idea['symbol']}* ({idea['name']})\n"
+            f"   訊號：{idea['action']}  信心：{confidence_pct}%\n"
+            f"   參考價：${idea['price']:.2f}"
+        )
+        if idea.get("reason"):
+            lines.append(f"   理由：{idea['reason']}")
+
+    lines.append("\n💡 用 /daybuy <代碼> <股數> <價錢> 開始當沖！")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+async def dayautotrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show/toggle day auto-trader status."""
+    dt = context.bot_data.get("day_auto_trader")
+    if not dt:
+        await update.message.reply_text("當沖自動交易系統未初始化")
+        return
+    args = context.args or []
+    if args and args[0] == "on":
+        dt.enable()
+        await update.message.reply_text("⚡ 當沖自動交易已啟用")
+    elif args and args[0] == "off":
+        dt.disable()
+        await update.message.reply_text("⚡ 當沖自動交易已停用")
+    else:
+        await update.message.reply_text(dt.summary_text())
+
+async def dayreview_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show day trading review report."""
+    dt = context.bot_data.get("day_auto_trader")
+    if not dt:
+        await update.message.reply_text("當沖自動交易系統未初始化")
+        return
+    await update.message.reply_text(dt.review_text())
+

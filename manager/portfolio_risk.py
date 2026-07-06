@@ -81,7 +81,7 @@ class PortfolioRiskManager:
 
     @property
     def max_stock_trades_daily(self) -> int:
-        return int(os.environ.get("RISK_MAX_STOCK_TRADES_DAILY", "5"))
+        return int(os.environ.get("RISK_MAX_STOCK_TRADES_DAILY", "10"))
 
     @property
     def max_total_trades_daily(self) -> int:
@@ -141,11 +141,14 @@ class PortfolioRiskManager:
         if symbol not in existing_symbols and len(current_positions) >= self.max_open_positions:
             return False, f"已達最大持倉數量限制 ({self.max_open_positions})"
 
-        # 2. Single position concentration
-        position_pct = (amount / portfolio_value * 100) if portfolio_value > 0 else 0
+        # 2. Single position concentration (TOTAL = existing + new)
+        existing_value = sum(p.get("value", 0) for p in current_positions if p["symbol"] == symbol)
+        total_position_value = amount + existing_value
+        position_pct = (total_position_value / portfolio_value * 100) if portfolio_value > 0 else 0
         if position_pct > self.max_single_position_pct:
             return False, (
-                f"持倉過度集中：{position_pct:.1f}% > {self.max_single_position_pct}% "
+                f"持倉過度集中：新增後 {position_pct:.1f}% > {self.max_single_position_pct}% "
+                f"(既有 {existing_value:,.0f} + 新增 {amount:,.0f})"
             )
 
         # 3. Sector exposure
@@ -241,16 +244,59 @@ class PortfolioRiskManager:
                 self._state["daily_loss"] = self._state.get("daily_loss", 0.0) + abs(pnl)
         self._save()
 
-    def check_drawdown(self, portfolio_value: float, peak_value: float) -> Optional[str]:
-        """Return a warning message if drawdown exceeds limits."""
+    def check_drawdown(self, portfolio_value: float, peak_value: float = 0.0) -> Optional[str]:
+        """Return a warning message if drawdown exceeds limits.
+
+        Automatically tracks peak internally — call update_peak() or pass
+        a non-zero peak_value to override.
+        """
+        # Use tracked peak if caller didn't provide one
         if peak_value <= 0:
+            peak_value = self._state.get("peak_portfolio_value", 0.0)
+
+        # Update peak if current value is higher
+        if portfolio_value > peak_value:
+            self._state["peak_portfolio_value"] = portfolio_value
+            self._save()
             return None
+
+        if peak_value <= 0:
+            return None  # No baseline yet
+
         dd_pct = (peak_value - portfolio_value) / peak_value * 100
         if dd_pct > self.max_daily_loss_pct * 3:
             return f"⚠️ 大幅回撤警告：{dd_pct:.1f}%（超過 {self.max_daily_loss_pct * 3:.0f}%）"
         if dd_pct > self.max_daily_loss_pct:
             return f"⚠️ 回撤警告：{dd_pct:.1f}%（超過 {self.max_daily_loss_pct:.0f}%）"
         return None
+
+    def update_peak(self, portfolio_value: float) -> None:
+        """Update peak portfolio value if current value is a new high."""
+        current_peak = self._state.get("peak_portfolio_value", 0.0)
+        if portfolio_value > current_peak:
+            self._state["peak_portfolio_value"] = portfolio_value
+            self._save()
+
+    def get_drawdown_pct(self, portfolio_value: float) -> float:
+        """Return current drawdown percentage from peak (0.0 = at peak)."""
+        peak = self._state.get("peak_portfolio_value", 0.0)
+        if peak <= 0 or portfolio_value >= peak:
+            return 0.0
+        return (peak - portfolio_value) / peak * 100
+
+    def should_force_stop(self, portfolio_value: float) -> tuple[bool, str]:
+        """Check if drawdown is severe enough to force-stop all trading.
+
+        Returns (should_stop: bool, reason: str).
+        """
+        dd_pct = self.get_drawdown_pct(portfolio_value)
+        # 3x the daily loss limit = circuit breaker
+        if dd_pct > self.max_daily_loss_pct * 3:
+            return True, f"CIRCUIT BREAKER: drawdown {dd_pct:.1f}% > {self.max_daily_loss_pct * 3:.0f}%"
+        # 2x = force-stop new trades
+        if dd_pct > self.max_daily_loss_pct * 2:
+            return True, f"FORCE STOP: drawdown {dd_pct:.1f}% > {self.max_daily_loss_pct * 2:.0f}%"
+        return False, ""
 
     # ------------------------------------------------------------------
     # Reporting

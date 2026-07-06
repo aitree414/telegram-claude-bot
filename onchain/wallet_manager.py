@@ -162,7 +162,7 @@ class WalletManager:
             logger.debug(f"Transaction signed: {signed_tx.hash.hex()}")
 
             return {
-                'rawTransaction': signed_tx.rawTransaction.hex(),
+                'rawTransaction': signed_tx.raw_transaction.hex(),
                 'hash': signed_tx.hash.hex(),
                 'r': hex(signed_tx.r),
                 's': hex(signed_tx.s),

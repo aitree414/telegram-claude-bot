@@ -88,6 +88,10 @@ class PortfolioManager:
             except Exception:
                 logger.exception("儲存 portfolio 失敗")
 
+    def get_initial_capital(self) -> float:
+        with self._lock:
+            return self._initial_capital
+
     def set_initial_capital(self, amount: float) -> None:
         """設定模擬交易初始本金（僅 sim 模式有效）。"""
         with self._lock:
@@ -118,15 +122,49 @@ class PortfolioManager:
             self._max_leverage_futures = max(1.0, leverage)
             self._save()
 
+    def get_equity(self) -> float:
+        """Return book equity = cash + holdings at cost basis.
+
+        This represents the portfolio's accounting net worth using cost basis.
+        For market-value equity, use get_cash() + current market value of holdings.
+        """
+        with self._lock:
+            return self.get_cash() + self._get_holdings_cost()
+
+    def _get_holdings_cost(self) -> float:
+        """Total cost basis of all current holdings."""
+        holdings = self._aggregate()
+        return sum(h["net_shares"] * h["avg_cost"] for h in holdings)
+
+    def get_portfolio_value(self, price_fn=None) -> float:
+        """Return cash + market value of holdings.
+
+        If price_fn(symbol) -> float is provided, uses current market prices.
+        Otherwise falls back to cost basis.
+        """
+        cash = self.get_cash()
+        holdings = self._aggregate()
+        if price_fn:
+            holdings_value = sum(
+                h["net_shares"] * max(0, (price_fn(h["symbol"]) or h["avg_cost"]))
+                for h in holdings
+            )
+        else:
+            holdings_value = sum(h["net_shares"] * h["avg_cost"] for h in holdings)
+        return cash + holdings_value
+
     def get_cash(self) -> float:
-        """計算可用現金 = initial_capital - 買入成本 + 賣出收入"""
+        """計算可用現金 = initial_capital - 買入成本 - 手續費 + 賣出收入 - 手續費
+
+        Buy and sell both store raw price with fee recorded separately.
+        """
         with self._lock:
             cash = self._initial_capital
             for t in self._trades:
                 if t["action"] == "buy":
-                    cash -= t["shares"] * t["price"]
+                    cash -= t["shares"] * t["price"] + t.get("fee", 0)
                 else:
-                    cash += t["shares"] * t["price"]
+                    cash += t["shares"] * t["price"] - t.get("fee", 0)
             return cash
 
     def get_buying_power(self) -> float:
@@ -139,7 +177,7 @@ class PortfolioManager:
             cash = self.get_cash()
             if self._max_leverage <= 1.0:
                 return cash
-            equity = self._initial_capital + self._realized_pnl
+            equity = self.get_equity()
             margin_available = max(0, equity * (self._max_leverage - 1))
             return max(0, cash) + margin_available
 
@@ -147,11 +185,11 @@ class PortfolioManager:
         """回傳保證金帳戶摘要資訊。"""
         with self._lock:
             cash = self.get_cash()
-            equity = self._initial_capital + self._realized_pnl
+            equity = self.get_equity()
             bp = max(0, cash) + max(0, equity * (self._max_leverage - 1))
             holdings = self._aggregate()
-            total_cost = sum(h["net_shares"] * h["avg_cost"] for h in holdings)
-            margin_used = max(0, total_cost - max(0, cash))
+            holdings_cost = sum(h["net_shares"] * h["avg_cost"] for h in holdings)
+            margin_used = max(0, holdings_cost - max(0, cash))
             margin_ratio = (margin_used / equity * 100) if equity > 0 else 0
             if margin_ratio > 80:
                 risk = "danger"
@@ -173,13 +211,31 @@ class PortfolioManager:
 
     def buy(self, symbol: str, shares: float, price: float, note: str = "",
             auto_sl_pct: float | None = None,
-            auto_tp_pct: float | None = None) -> int:
-        """Record a buy trade. Returns trade ID.
+            auto_tp_pct: float | None = None,
+            fee_rate: float = 0.001425) -> int:
+        """Record a buy trade. Returns trade ID (0 if insufficient cash).
 
+        Checks available cash before recording. In simulation mode, rejects
+        trades that exceed available cash to prevent cost-basis inflation.
         If auto_sl_pct is set (e.g. 15), creates a stop-loss at price*(1-pct/100).
         If auto_tp_pct is set (e.g. 30), creates a take-profit at price*(1+pct/100).
+
+        Deducts transaction fee (default 0.1425% = TW broker fee) from cash.
+        price is the raw execution price (TWD). Fee is recorded separately.
         """
         with self._lock:
+            trade_value = shares * price
+            fee = max(1, trade_value * fee_rate)  # Minimum $1 fee floor
+            total_cost = trade_value + fee
+
+            bp = self.get_buying_power()
+            if self._simulation and total_cost > bp + 1:  # $1 tolerance
+                logger.warning(
+                    f"Buy {symbol} x{shares} @ {price} = {total_cost:.0f} "
+                    f"(incl. fee {fee:.0f}) failed: buying_power {bp:.0f} insufficient"
+                )
+                return 0
+
             trade_id = self._next_id
             self._trades = [
                 *self._trades,
@@ -188,12 +244,23 @@ class PortfolioManager:
                     "symbol": symbol,
                     "action": "buy",
                     "shares": shares,
-                    "price": price,
+                    "price": price,       # raw execution price (TWD)
                     "date": str(date.today()),
                     "note": note,
+                    "fee": fee,
                 },
             ]
             self._next_id += 1
+
+            # Post-trade cash sanity check: warn if cash goes deeply negative
+            if self._simulation:
+                cash_after = self.get_cash()
+                equity = self.get_equity()
+                if cash_after < 0 and abs(cash_after) > equity * 0.3:
+                    logger.warning(
+                        f"⚠️ Cash deeply negative ({cash_after:,.0f}) after buy {symbol} "
+                        f"x{shares} @ {price} (equity {equity:,.0f}) — margin risk elevated"
+                    )
 
             if auto_sl_pct and auto_sl_pct > 0:
                 sl_price = round(price * (1 - auto_sl_pct / 100), 2)
@@ -213,8 +280,13 @@ class PortfolioManager:
             self._save()
             return trade_id
 
-    def sell(self, symbol: str, shares: float, price: float) -> dict[str, Any]:
-        """Record a sell trade. Returns realized P&L info."""
+    def sell(self, symbol: str, shares: float, price: float,
+             fee_rate: float = 0.004425) -> dict[str, Any]:
+        """Record a sell trade. Returns realized P&L info.
+
+        Deducts transaction fees from realized P&L.
+        Default fee_rate 0.4425% = TW broker fee (0.1425%) + stamp duty (0.3%).
+        """
         with self._lock:
             holdings = self._aggregate()
             holding = next((h for h in holdings if h["symbol"] == symbol), None)
@@ -224,7 +296,10 @@ class PortfolioManager:
                 return {"ok": False, "error": f"持股不足（現有 {available} 股）"}
 
             avg_cost = holding["avg_cost"]
-            realized_pnl = (price - avg_cost) * shares
+            trade_value = shares * price
+            fee = max(1, trade_value * fee_rate)  # Minimum $1 fee floor
+            gross_pnl = (price - avg_cost) * shares
+            realized_pnl = gross_pnl - fee
             realized_pnl_pct = (price - avg_cost) / avg_cost * 100 if avg_cost else 0
 
             trade_id = self._next_id
@@ -237,7 +312,8 @@ class PortfolioManager:
                     "shares": shares,
                     "price": price,
                     "date": str(date.today()),
-                    "note": "",
+                    "note": f"fee {fee:.0f}",
+                    "fee": fee,
                 },
             ]
             self._next_id += 1
@@ -256,7 +332,10 @@ class PortfolioManager:
             }
 
     def _aggregate(self) -> list[dict[str, Any]]:
-        """Aggregate trades by symbol: net_shares and weighted avg_cost."""
+        """Aggregate trades by symbol: net_shares and weighted avg_cost.
+
+        Buy cost basis = shares * raw_price + fee (true total cost).
+        """
         with self._lock:
             by_symbol: dict[str, dict] = {}
             for t in self._trades:
@@ -264,7 +343,8 @@ class PortfolioManager:
                 if sym not in by_symbol:
                     by_symbol[sym] = {"total_cost": 0.0, "buy_shares": 0.0, "sell_shares": 0.0}
                 if t["action"] == "buy":
-                    by_symbol[sym]["total_cost"] += t["shares"] * t["price"]
+                    # Include fee in cost basis for accurate P&L
+                    by_symbol[sym]["total_cost"] += t["shares"] * t["price"] + t.get("fee", 0)
                     by_symbol[sym]["buy_shares"] += t["shares"]
                 else:
                     by_symbol[sym]["sell_shares"] += t["shares"]
@@ -383,3 +463,75 @@ class PortfolioManager:
                     "unrealized_pnl_pct": round(upnl_pct, 2),
                 })
             return result
+
+    # ── Integrity checks ────────────────────────────────────────────────
+
+    def verify_integrity(self) -> dict[str, Any]:
+        """Check portfolio internal consistency.
+
+        Verifies that cash, holdings, and realized P&L are self-consistent.
+        Returns a dict with status, issues list, and key metrics.
+        """
+        with self._lock:
+            issues = []
+            cash = self._initial_capital
+            total_buy_cost = 0.0
+            total_sell_proceeds = 0.0
+            realized_from_trades = 0.0
+            bought_shares: dict[str, float] = {}
+            bought_cost: dict[str, float] = {}
+
+            for t in self._trades:
+                if t["action"] == "buy":
+                    cash -= t["shares"] * t["price"]
+                    total_buy_cost += t["shares"] * t["price"]
+                    bought_shares[t["symbol"]] = bought_shares.get(t["symbol"], 0) + t["shares"]
+                    bought_cost[t["symbol"]] = bought_cost.get(t["symbol"], 0) + t["shares"] * t["price"]
+                else:
+                    cash += t["shares"] * t["price"]
+                    total_sell_proceeds += t["shares"] * t["price"]
+                    sym = t["symbol"]
+                    if sym in bought_shares and bought_shares[sym] > 0:
+                        avg_cost = bought_cost[sym] / bought_shares[sym]
+                        realized_from_trades += t["shares"] * (t["price"] - avg_cost)
+                        sell_shares = min(t["shares"], bought_shares[sym])
+                        bought_shares[sym] -= sell_shares
+                        bought_cost[sym] = avg_cost * bought_shares[sym] if bought_shares[sym] > 0 else 0
+
+            computed_cash = cash
+            stored_cash = self._initial_capital + self._realized_pnl - total_buy_cost + total_sell_proceeds
+            actual_cash = self.get_cash()
+            equity = self.get_equity()
+
+            if abs(computed_cash - actual_cash) > 1.0:
+                issues.append(f"Cash mismatch: computed={computed_cash:.2f} get_cash={actual_cash:.2f}")
+
+            if equity < 0:
+                issues.append(f"Negative equity: {equity:.2f}")
+
+            if self._simulation and actual_cash < -self._initial_capital * 0.5:
+                issues.append(f"Cash dangerously negative: {actual_cash:.2f} (>{self._initial_capital * -0.5:.0f})")
+
+            holdings = self._aggregate()
+            total_holdings_cost = sum(h["net_shares"] * h["avg_cost"] for h in holdings)
+            implied_pnl = self._realized_pnl
+            expected_pnl = realized_from_trades
+            if abs(implied_pnl - expected_pnl) > 1.0:
+                issues.append(f"Realized PnL mismatch: stored={implied_pnl:.2f} computed={expected_pnl:.2f}")
+
+            holdings_pct = {}
+            for h in holdings:
+                pct = (h["net_shares"] * h["avg_cost"] / equity * 100) if equity > 0 else 0
+                holdings_pct[h["symbol"]] = round(pct, 1)
+
+            return {
+                "ok": len(issues) == 0,
+                "issues": issues,
+                "equity": round(equity, 2),
+                "cash": round(actual_cash, 2),
+                "holdings_count": len(holdings),
+                "holdings_value": round(total_holdings_cost, 2),
+                "holdings_concentration": holdings_pct,
+                "realized_pnl": round(implied_pnl, 2),
+                "total_trades": len(self._trades),
+            }

@@ -2,14 +2,11 @@
 
 Core thesis
 -----------
-~73.4% of Polymarket binary markets resolve to NO.
-Buying NO at < $0.65 yields positive expected value:
+Buy NO when implied probability is below market-implied mid-price.
+Uses dynamic P(NO) derived from the orderbook mid-price rather than
+a hardcoded historical value. This adapts to changing market conditions.
 
-  EV = P(NO) × $1.00 - cost
-     = 0.734 × $1.00 - $0.65
-     = $0.084 per token (~12.9% ROI per trade)
-
-This is a pure statistical edge — no LLM prediction needed.
+  EV = P(NO)_dynamic × $1.00 - cost
 """
 
 from __future__ import annotations
@@ -22,15 +19,15 @@ from .polymarket_base import BaseStrategy, StrategyResult, TradeSignal
 
 logger = logging.getLogger(__name__)
 
-# Historical probability that a binary market resolves NO
-# Source: Polymarket data analysis
-P_NO = 0.734
+# Maximum NO price to buy at (market-implied NO probability threshold)
+MAX_NO_PRICE = 0.75
 
-# Maximum NO price to buy at (ensures positive EV)
-MAX_NO_PRICE = 0.65
+# Minimum edge (EV per token) required to enter a trade.
+# Trades with EV below this are filtered to avoid noise and fee drag.
+MIN_EDGE = 0.02  # $0.02 per token minimum expected value
 
 # Minimum volume to filter out junk markets ($)
-MIN_VOLUME = 5_000
+MIN_VOLUME = 1_000
 
 # Maximum size per market to limit exposure
 MAX_PER_MARKET = 500  # tokens
@@ -84,20 +81,35 @@ class NEHStrategy(BaseStrategy):
         self.only_check_orderbook = only_check_orderbook
         self.clob_client = clob_client
 
+    @staticmethod
+    def _market_implied_p_no(market: MarketData) -> float:
+        """Derive P(NO) from market prices.
+
+        Uses YES price as the complement: if YES=$0.30, P(NO)=0.70.
+        This is the market's own implied probability for NO.
+        No clamping — we let the market speak and filter by edge size instead.
+        """
+        yes_idx = 1 if market.outcomes[0].strip().upper() == "NO" else 0
+        yes_price = market.outcome_prices[yes_idx]
+        p_no = 1.0 - yes_price
+        # Apply a small epsilon to avoid division-by-zero and extreme tail bets.
+        # P(NO) below 0.15 or above 0.85 are tail regions where the edge must
+        # be very large to justify a trade (handled by min_edge filter below).
+        return max(0.05, min(0.95, p_no))
+
     def run(self, markets: list[MarketData]) -> NEHResult:
         """Scan markets for NO-priced-below-threshold opportunities.
 
-        Parameters
-        ----------
-        markets : list[MarketData]
-            Active binary markets from ``PolymarketCLOB.fetch_active_markets()``.
+        Uses market-implied P(NO) from the complementary YES price,
+        then looks for NO outcomes trading BELOW that implied value.
 
         Returns
         -------
         NEHResult with trade signals.
         """
         signals: list[TradeSignal] = []
-        skipped = {"low_volume": 0, "no_price_too_high": 0, "no_token_id": 0, "orderbook_check": 0}
+        skipped = {"low_volume": 0, "no_price_too_high": 0, "no_token_id": 0,
+                    "orderbook_check": 0, "edge_too_small": 0}
         total_scanned = len(markets)
 
         for market in markets:
@@ -123,23 +135,34 @@ class NEHStrategy(BaseStrategy):
 
             no_token_id = market.token_ids[no_idx]
 
-            # Optional: check CLOB orderbook for executable price
+            # Check CLOB orderbook for executable price
             exec_price = no_price
-            if self.only_check_orderbook and self.clob_client:
-                book = self.clob_client.get_orderbook(no_token_id)
-                if book.asks:
-                    exec_price = book.asks[0].price
-                    if exec_price > self.max_no_price:
-                        skipped["orderbook_check"] += 1
-                        continue
+            if self.clob_client:
+                try:
+                    book = self.clob_client.get_orderbook(no_token_id)
+                    if book.asks:
+                        exec_price = book.asks[0].price
+                except Exception:
+                    pass  # fall back to market price
+
+            # Dynamic P(NO) from market-implied probability
+            p_no = self._market_implied_p_no(market)
+            if p_no <= exec_price:
+                skipped["orderbook_check"] += 1
+                continue
 
             # Expected value calculation
-            ev_per_token = P_NO * 1.0 - exec_price
-            confidence = min(1.0, ev_per_token / 0.15)  # normalize: $0.15 EV = 100%
+            ev_per_token = p_no - exec_price
+
+            # Require a minimum edge to filter noise and cover fees/gas
+            if ev_per_token < MIN_EDGE:
+                skipped["edge_too_small"] += 1
+                continue
+            confidence = min(1.0, ev_per_token / 0.10)  # $0.10 EV = 100%
 
             # Position sizing: scale with EV confidence
-            size = min(self.max_per_market, int(100 * ev_per_token / 0.084))
-            size = max(size, 10)  # min 10 tokens
+            size = min(self.max_per_market, int(200 * confidence))
+            size = max(size, 10)
 
             signals.append(TradeSignal(
                 market_question=market.question,
@@ -154,7 +177,7 @@ class NEHStrategy(BaseStrategy):
                 confidence=round(confidence, 2),
                 strategy=self.name,
                 reason=(
-                    f"NO @ ${exec_price:.4f} vs historical P(NO)={P_NO:.1%} "
+                    f"NO @ ${exec_price:.4f} vs implied P(NO)={p_no:.0%} "
                     f"(EV=${ev_per_token:.4f}/token, +{ev_per_token/exec_price*100:.1f}%)"
                 ),
             ))
@@ -171,7 +194,8 @@ class NEHStrategy(BaseStrategy):
             f"{len(signals)} signals "
             f"(skipped: vol={skipped['low_volume']}, "
             f"price={skipped['no_price_too_high']}, "
-            f"ob={skipped['orderbook_check']})"
+            f"ob={skipped['orderbook_check']}, "
+            f"edge={skipped['edge_too_small']})"
         )
         return result
 

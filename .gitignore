@@ -100,3 +100,9 @@ fix_*.sh
 demo_*.py
 fixed_*.py
 *.backup.local
+
+# IDE / auto-generated config
+.codex/
+.dream/
+.mcp.json
+.env.txt

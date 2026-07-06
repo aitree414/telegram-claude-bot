@@ -7,7 +7,7 @@ stop loss/take profit calculation, trade validation, and exposure management.
 import logging
 import time
 from typing import Dict, Optional, Any, Tuple, List
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 
 from bot.config_web3 import get_web3_config
 from .database import (
@@ -100,7 +100,11 @@ class RiskManager:
     def _check_signal_expired(self, signal: Signal) -> bool:
         """Check if a signal has expired."""
         if signal.expires_at:
-            return datetime.utcnow() > signal.expires_at
+            now = datetime.now(timezone.utc)
+            expires = signal.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            return now > expires
         return False
 
     def _check_daily_limits(self) -> Tuple[bool, str]:
@@ -329,12 +333,12 @@ class RiskManager:
         # Dynamic stop loss based on risk
         base_stop = self.config.stop_loss_pct  # 10% default
 
-        # Tighter stop for riskier tokens
-        risk_adjustment = 1.0 + signal.risk_score
+        # Tighter stop for riskier tokens (inverted: high risk = small multiplier)
+        risk_adjustment = max(0.3, 1.0 - signal.risk_score * 0.7)
         stop_loss = base_stop * risk_adjustment
 
-        # Cap at max stop loss
-        return min(stop_loss, 0.20)  # Max 20%
+        # Cap at [3%, 20%] range
+        return max(0.03, min(stop_loss, 0.20))
 
     def calculate_take_profit(self, signal: Signal) -> float:
         """Calculate take profit level for a signal.
@@ -405,7 +409,11 @@ class RiskManager:
                 .first()
 
             if last_trade and last_trade.executed_at:
-                elapsed = (datetime.utcnow() - last_trade.executed_at).total_seconds()
+                now = datetime.now(timezone.utc)
+                executed_at = last_trade.executed_at
+                if executed_at.tzinfo is None:
+                    executed_at = executed_at.replace(tzinfo=timezone.utc)
+                elapsed = (now - executed_at).total_seconds()
                 cooldown_seconds = self.config.cooldown_minutes * 60
                 if elapsed < cooldown_seconds:
                     remaining = cooldown_seconds - elapsed
@@ -415,7 +423,7 @@ class RiskManager:
             return True
         except Exception as e:
             logger.error(f"Failed to check cooldown: {e}")
-            return True  # Allow trade on error
+            return False  # Block trade on DB error (fail-safe)
         finally:
             session.close()
 

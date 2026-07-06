@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from bot.stock import resolve_stock_symbol, get_current_price
+from manager.market_schedule import is_market_open, detect_market
 from manager.portfolio_risk import PortfolioRiskManager
 
 logger = logging.getLogger(__name__)
@@ -27,11 +28,17 @@ STOCK_SECTIONS = {
     "us_stocks": "US",
 }
 
+USD_TWD_RATE = 33.0  # for US stock price conversion to TWD
+
+# Hard floor: trades below this confidence are NEVER executed,
+# regardless of env-var configuration. This is a safety rail.
+HARD_CONFIDENCE_FLOOR = 0.55
+
 
 class CommitteeTraderConfig:
     @property
     def max_trades_per_day(self) -> int:
-        return int(os.environ.get("COMMITTEE_MAX_PER_DAY", "5"))
+        return int(os.environ.get("COMMITTEE_MAX_PER_DAY", "10"))
 
     @property
     def max_position_pct(self) -> float:
@@ -44,6 +51,10 @@ class CommitteeTraderConfig:
     @property
     def enabled(self) -> bool:
         return os.environ.get("COMMITTEE_TRADER_ENABLED", "true").lower() == "true"
+
+    @property
+    def cash_reserve_pct(self) -> float:
+        return float(os.environ.get("COMMITTEE_CASH_RESERVE_PCT", "15"))
 
     @property
     def use_margin(self) -> bool:
@@ -79,6 +90,8 @@ class CommitteeTrader:
             "trades_today": 0,
             "date": str(date.today()),
             "history": [],
+            "today_buys": [],
+            "today_sells": [],
         }
 
     def _save_state(self) -> None:
@@ -92,24 +105,30 @@ class CommitteeTrader:
         today = str(date.today())
         if self._state.get("date") != today:
             self._state["trades_today"] = 0
+            self._state["today_buys"] = []
+            self._state["today_sells"] = []
             self._state["date"] = today
 
     def _estimate_portfolio_value(self) -> float:
         if not self.sim_portfolio:
             return 100000.0
-        total = 0.0
+        total_holdings = 0.0
         for h in self.sim_portfolio.list_holdings():
             price = get_current_price(h["symbol"]) or h["avg_cost"]
-            total += price * h["net_shares"]
-        return max(total, 10000.0)
+            total_holdings += price * h["net_shares"]
+        cash = self.sim_portfolio.get_cash()
+        return max(cash + total_holdings, 10000.0)
 
     def _get_available_buying_power(self) -> float:
-        """回傳可用買入力（含槓桿）。"""
+        """Return available buying power with cash reserve applied."""
         if not self.sim_portfolio:
             return 400000.0
         if self.config.use_margin:
-            return self.sim_portfolio.get_buying_power()
-        return self.sim_portfolio.get_cash()
+            bp = self.sim_portfolio.get_buying_power()
+        else:
+            bp = self.sim_portfolio.get_cash()
+        reserve = self._estimate_portfolio_value() * (self.config.cash_reserve_pct / 100)
+        return max(0, bp - reserve)
 
     def _get_current_price(self, code: str) -> Optional[float]:
         """Get latest price for any stock (TW or US)."""
@@ -137,6 +156,59 @@ class CommitteeTrader:
                     signals.append((s, action, confidence, market))
         return signals
 
+    def _rebalance_overweight_positions(self) -> list[dict]:
+        """Sell excess shares from positions exceeding max_position_pct * 1.3.
+
+        Prevents any single holding from consuming too much of the portfolio
+        due to price appreciation or initial sizing. Frees up capital for
+        new opportunities.
+
+        Skips positions that were bought today to avoid same-day conflict
+        with freshly opened committee trades.
+        """
+        if not self.sim_portfolio:
+            return []
+        actions = []
+        portfolio_value = self._estimate_portfolio_value()
+        max_pos_value = portfolio_value * (self.config.max_position_pct / 100)
+        threshold = max_pos_value * 1.3  # e.g. 19.5% trigger for 15% limit
+
+        today_buys = set(self._state.get("today_buys", []))
+        for h in self.sim_portfolio.list_holdings():
+            sym = h["symbol"]
+            if sym in today_buys:
+                continue  # skip positions opened today — let them settle
+            price = self._get_current_price(sym)
+            if not price or price <= 0:
+                continue
+            # Use current market price, not avg_cost, to compute position value
+            portfolio_price = price * USD_TWD_RATE if _is_us_stock(sym) else price
+            current_value = portfolio_price * h["net_shares"]
+            if current_value <= threshold:
+                continue
+
+            target_shares = max(1, int(max_pos_value / portfolio_price))
+            sell_shares = int(h["net_shares"] - target_shares)
+            if sell_shares <= 0:
+                continue
+
+            old_net = int(h["net_shares"])
+            result = self.sim_portfolio.sell(sym, sell_shares, portfolio_price)
+            if result.get("ok"):
+                self._state["trades_today"] += 1
+                self.risk_manager.record_trade(is_stock=True, pnl=result.get("realized_pnl", 0))
+                logger.info("Rebalance: sold %d/%d of %s @ %.2f (was %.1f%% of portfolio)",
+                            sell_shares, old_net, sym, price,
+                            current_value / portfolio_value * 100)
+                actions.append({
+                    "symbol": sym, "action": "REBALANCE_SELL",
+                    "shares": sell_shares, "price": price,
+                    "pnl": result.get("realized_pnl", 0),
+                    "reason": (f"reduce overweight "
+                               f"({current_value/portfolio_value*100:.0f}% > {self.config.max_position_pct}%)"),
+                })
+        return actions
+
     def run_cycle(self) -> list[dict]:
         """Read committee signals and execute trades.
 
@@ -151,6 +223,15 @@ class CommitteeTrader:
             logger.info("Daily trade limit reached, skipping committee cycle")
             return []
 
+        # ── Drawdown check: halt trading if drawdown is too severe ──
+        portfolio_val = self._estimate_portfolio_value()
+        if self.risk_manager:
+            self.risk_manager.update_peak(portfolio_val)
+            should_halt, halt_reason = self.risk_manager.should_force_stop(portfolio_val)
+            if should_halt:
+                logger.warning("Committee trader halted: %s", halt_reason)
+                return [{"symbol": "PORTFOLIO", "action": "HALTED", "reason": halt_reason}]
+
         if not COMMITTEE_JSON.exists():
             logger.warning("No committee data found at %s", COMMITTEE_JSON)
             return []
@@ -161,15 +242,32 @@ class CommitteeTrader:
             logger.error("Failed to read committee JSON: %s", e)
             return []
 
+        actions = []
+
+        # Rebalance overweight positions before new trades
+        rebalance_actions = self._rebalance_overweight_positions()
+        if rebalance_actions:
+            actions.extend(rebalance_actions)
+            logger.info("Rebalanced %d overweight position(s)", len(rebalance_actions))
+
         signals = self._collect_signals(data)
         if not signals:
-            return []
+            # Return rebalance actions even without new signals
+            if actions:
+                self._state["history"].append({
+                    "time": datetime.now().isoformat(),
+                    "actions": actions,
+                })
+                self._state["history"] = self._state["history"][-50:]
+                self._save_state()
+            return actions
 
         # Priority order: strong_sell > sell > strong_buy > buy
         order = {"strong_sell": 0, "sell": 1, "strong_buy": 2, "buy": 3}
         signals.sort(key=lambda x: (order.get(x[1], 9), -x[2]))
 
-        actions = []
+        # Track cumulative spend this cycle to prevent over-concentration
+        cycle_spent = 0.0
 
         for s, action, confidence, market in signals:
             if self._state["trades_today"] >= self.config.max_trades_per_day:
@@ -183,24 +281,48 @@ class CommitteeTrader:
                 logger.warning("No price for %s (%s), skipping", code, name)
                 continue
 
+            # Skip if the stock's market is closed
+            if not is_market_open(symbol):
+                mkt = detect_market(symbol).value.upper()
+                logger.info("Market %s closed for %s (%s), skipping", mkt, code, name)
+                actions.append({
+                    "symbol": symbol, "name": name, "action": "SKIP",
+                    "reason": f"{mkt} market closed",
+                })
+                continue
+
             is_buy = action in ("buy", "strong_buy")
             is_sell = action in ("sell", "strong_sell")
 
             if is_buy:
-                if confidence < self.config.min_confidence:
-                    logger.info("Skipping BUY %s: confidence %.2f < threshold %.2f",
-                                code, confidence, self.config.min_confidence)
+                effective_min_conf = max(self.config.min_confidence, HARD_CONFIDENCE_FLOOR)
+                if confidence < effective_min_conf:
+                    logger.info("Skipping BUY %s: confidence %.2f < threshold %.2f (hard floor %.2f)",
+                                code, confidence, effective_min_conf, HARD_CONFIDENCE_FLOOR)
+                    continue
+
+                # Intraday cooldown: skip if already bought today
+                if symbol in self._state.get("today_buys", []):
+                    logger.info("BUY %s (%s) skipped: already bought today", code, name)
                     continue
 
                 current_value = self._estimate_portfolio_value()
                 position_value = current_value * (self.config.max_position_pct / 100)
                 available_bp = self._get_available_buying_power()
                 position_value = min(position_value, available_bp)
-                if position_value < price:
-                    logger.info("BUY %s skipped: position_value %.0f < price %.2f (bp %.0f)",
-                                code, position_value, price, available_bp)
+
+                # Per-cycle budget: prevent over-concentration in single cycle
+                remaining_budget = available_bp - cycle_spent
+                position_value = min(position_value, remaining_budget)
+
+                # Convert US stock price to TWD for position sizing (sim_portfolio stores in TWD)
+                portfolio_price = price * USD_TWD_RATE if _is_us_stock(code) else price
+
+                if position_value < portfolio_price:
+                    logger.info("BUY %s skipped: position_value %.0f < portfolio_price %.2f (bp %.0f, remaining %0.f)",
+                                code, position_value, portfolio_price, available_bp, remaining_budget)
                     continue
-                shares = max(1, int(position_value / price))
+                shares = max(1, int(position_value / portfolio_price))
 
                 if self.sim_portfolio:
                     holdings = self.sim_portfolio.list_holdings()
@@ -209,10 +331,14 @@ class CommitteeTrader:
                         logger.info("Already holding %s (%s), skipping BUY", code, name)
                         continue
 
-                    positions = [
-                        {"symbol": h["symbol"], "value": h["avg_cost"] * h["net_shares"], "sector": ""}
-                        for h in holdings
-                    ]
+                    positions = []
+                    for h in holdings:
+                        pos_price = get_current_price(h["symbol"]) or h["avg_cost"]
+                        positions.append({
+                            "symbol": h["symbol"],
+                            "value": pos_price * h["net_shares"],
+                            "sector": "",
+                        })
                     allowed, reason = self.risk_manager.validate_new_position(
                         symbol, position_value, current_value, positions
                     )
@@ -222,11 +348,14 @@ class CommitteeTrader:
                         continue
 
                     note = f"committee: {action} conf {confidence:.0%} ({market})"
-                    tid = self.sim_portfolio.buy(symbol, shares, price, note)
+                    tid = self.sim_portfolio.buy(symbol, shares, portfolio_price, note,
+                        auto_sl_pct=15, auto_tp_pct=30)
                     self._state["trades_today"] += 1
+                    self._state.setdefault("today_buys", []).append(symbol)
+                    cycle_spent += shares * portfolio_price
                     self.risk_manager.record_trade(is_stock=True)
-                    logger.info("📊 Committee BUY %s (%s) x%d @ %.2f  (trade #%d, %s)",
-                                code, name, shares, price, tid, market)
+                    logger.info("📊 Committee BUY %s (%s) x%d @ %.2f (price %.2f TWD) (trade #%d, %s)",
+                                code, name, shares, price, portfolio_price, tid, market)
                     actions.append({
                         "symbol": symbol, "name": name, "action": "BUY",
                         "shares": shares, "price": price,
@@ -236,6 +365,11 @@ class CommitteeTrader:
 
             elif is_sell:
                 if not self.sim_portfolio:
+                    continue
+
+                # Intraday cooldown: skip if already sold today via committee
+                if symbol in self._state.get("today_sells", []):
+                    logger.info("SELL %s (%s) skipped: already sold today", code, name)
                     continue
 
                 holdings = self.sim_portfolio.list_holdings()
@@ -248,9 +382,12 @@ class CommitteeTrader:
                 if action == "sell":
                     sell_shares = max(1, int(sell_shares / 2))
 
-                sell_result = self.sim_portfolio.sell(symbol, sell_shares, price)
+                # Convert US stock price to TWD for sim_portfolio (stores in TWD)
+                sell_price = price * USD_TWD_RATE if _is_us_stock(code) else price
+                sell_result = self.sim_portfolio.sell(symbol, sell_shares, sell_price)
                 if sell_result.get("ok"):
                     self._state["trades_today"] += 1
+                    self._state.setdefault("today_sells", []).append(symbol)
                     self.risk_manager.record_trade(is_stock=True)
                     pnl = sell_result.get("realized_pnl", 0)
                     logger.info("📊 Committee SELL %s (%s) x%d @ %.2f  pnl %.2f",

@@ -274,6 +274,82 @@ class PersonaTracker:
 
         return "\n".join(lines)
 
+    # ── Performance stats ────────────────────────
+
+    def get_performance_stats(self) -> dict:
+        """Structured performance data for reporting and auto-tuning.
+
+        Returns
+        -------
+        dict with keys:
+            overall_accuracy : float (0..1)
+            total_verified  : int
+            by_persona      : {persona: {correct, total, accuracy, weight}}
+            by_confidence   : {high: {correct, total, accuracy},
+                               low: {correct, total, accuracy}}
+            by_symbol       : {symbol: {correct, total, accuracy}}
+        """
+        by_persona: dict = {}
+        by_symbol: dict = {}
+        high = {"correct": 0, "total": 0}
+        low = {"correct": 0, "total": 0}
+        total_correct = 0
+        total_verified = 0
+
+        for r in self._records:
+            if not r.outcome_checked or r.outcome not in ("correct", "wrong"):
+                continue
+
+            is_correct = 1 if r.outcome == "correct" else 0
+            total_correct += is_correct
+            total_verified += 1
+
+            # By persona
+            if r.persona not in by_persona:
+                by_persona[r.persona] = {"correct": 0, "total": 0}
+            by_persona[r.persona]["correct"] += is_correct
+            by_persona[r.persona]["total"] += 1
+
+            # By symbol
+            if r.symbol not in by_symbol:
+                by_symbol[r.symbol] = {"correct": 0, "total": 0}
+            by_symbol[r.symbol]["correct"] += is_correct
+            by_symbol[r.symbol]["total"] += 1
+
+            # By confidence
+            if r.confidence >= 70:
+                high["correct"] += is_correct
+                high["total"] += 1
+            else:
+                low["correct"] += is_correct
+                low["total"] += 1
+
+        def _acc(c, t):
+            return round(c / t, 4) if t > 0 else 0.0
+
+        weights = self.get_weights()
+        for p in by_persona:
+            by_persona[p]["accuracy"] = _acc(by_persona[p]["correct"],
+                                             by_persona[p]["total"])
+            by_persona[p]["weight"] = weights.get(p, 1.0)
+
+        for s in by_symbol:
+            by_symbol[s]["accuracy"] = _acc(by_symbol[s]["correct"],
+                                            by_symbol[s]["total"])
+
+        return {
+            "overall_accuracy": _acc(total_correct, total_verified),
+            "total_verified": total_verified,
+            "by_persona": by_persona,
+            "by_confidence": {
+                "high": {"correct": high["correct"], "total": high["total"],
+                         "accuracy": _acc(high["correct"], high["total"])},
+                "low": {"correct": low["correct"], "total": low["total"],
+                        "accuracy": _acc(low["correct"], low["total"])},
+            },
+            "by_symbol": by_symbol,
+        }
+
     @property
     def total_predictions(self) -> int:
         return len(self._records)

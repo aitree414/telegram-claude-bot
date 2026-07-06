@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+<style>
+  text { font-family: "Courier New", "Lucida Console", "Microsoft JhengHei", monospace; }
+  .title { fill: #caf0f8; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+  .label { fill: #00b4d8; font-size: 10px; }
+  .dim-value { fill: #f77f00; font-size: 9px; font-weight: 600; }
+  .dim-line { stroke: #f77f00; stroke-width: 0.6; stroke-dasharray: 4,2; }
+  .dim-ext { stroke: #f77f00; stroke-width: 0.4; }
+  .note { fill: #90e0ef; font-size: 8px; }
+  .note-warn { fill: #f77f00; font-size: 8px; }
+  .geom { fill: none; stroke: #48cae4; stroke-width: 1.2; }
+  .geom-thin { fill: none; stroke: #48cae4; stroke-width: 0.6; }
+  .geom-dash { fill: none; stroke: #48cae4; stroke-width: 0.5; stroke-dasharray: 4,3; }
+  .center { stroke: #06d6a0; stroke-width: 0.4; stroke-dasharray: 12,3,2,3; }
+  .grid-minor { stroke: #112240; stroke-width: 0.3; }
+  .grid-major { stroke: #1a3a5c; stroke-width: 0.5; }
+  .section-line { stroke: #f77f00; stroke-width: 0.7; stroke-dasharray: 8,3,2,3; }
+  .truss-diag { stroke: #48cae4; stroke-width: 0.4; opacity: 0.5; }
+  .hp-marker { fill: #f77f00; }
+  .table-header { fill: #0d1f3c; stroke: #00b4d8; stroke-width: 0.5; }
+  .table-cell { fill: #0a1628; stroke: #00b4d8; stroke-width: 0.5; }
+  .bom-text { fill: #caf0f8; font-size: 7px; }
+  .bom-hdr { fill: #00b4d8; font-size: 7px; font-weight: 700; }
+</style>
+<defs>
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" class="grid-minor"/>
+  </pattern>
+  <pattern id="grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
+    <path d="M 100 0 L 0 0 0 100" fill="none" class="grid-major"/>
+  </pattern>
+  <marker id="arr-org" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+    <polygon points="0 0, 6 2, 0 4" fill="#f77f00"/>
+  </marker>
+  <marker id="arr-cyan" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+    <polygon points="0 0, 6 2, 0 4" fill="#48cae4"/>
+  </marker>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="6" stroke="#48cae4" stroke-width="0.3" opacity="0.4"/>
+  </pattern>
+</defs>
+<rect width="1200" height="800" fill="#0a1628"/>
+<rect width="1200" height="800" fill="url(#grid)"/>
+<rect width="1200" height="800" fill="url(#grid-major)"/>
+<rect x="15" y="15" width="1170" height="770" fill="none" stroke="#00b4d8" stroke-width="1"/>
+<rect x="18" y="18" width="1164" height="764" fill="none" stroke="#00b4d8" stroke-width="0.3"/>
+<text x="35" y="40" class="title">FRONT VIEW — 正視圖  S:1/40</text>
+<path d="M 385,125 L 505,125 L 505,225 L 485,225 L 485,625 C 545,635 595,665 595,705 C 595,735 500,745 500,765 L 500,785 C 595,795 595,845 595,895 L 595,925 L 295,925 L 295,895 C 295,845 295,795 390,785 L 390,765 C 390,745 295,735 295,705 C 295,665 345,635 405,625 L 405,225 L 385,225 Z" class="geom"/>
+<line x1="445" y1="95" x2="445" y2="955" class="center"/>
+<line x1="410" y1="225" x2="480" y2="240" class="truss-diag"/>
+<line x1="480" y1="225" x2="410" y2="240" class="truss-diag"/>
+<line x1="410" y1="255" x2="480" y2="270" class="truss-diag"/>
+<line x1="480" y1="255" x2="410" y2="270" class="truss-diag"/>
+<line x1="410" y1="285" x2="480" y2="300" class="truss-diag"/>
+<line x1="480" y1="285" x2="410" y2="300" class="truss-diag"/>
+<line x1="410" y1="315" x2="480" y2="330" class="truss-diag"/>
+<line x1="480" y1="315" x2="410" y2="330" class="truss-diag"/>
+<line x1="410" y1="345" x2="480" y2="360" class="truss-diag"/>
+<line x1="480" y1="345" x2="410" y2="360" class="truss-diag"/>
+<line x1="410" y1="375" x2="480" y2="390" class="truss-diag"/>
+<line x1="480" y1="375" x2="410" y2="390" class="truss-diag"/>
+<line x1="410" y1="405" x2="480" y2="420" class="truss-diag"/>
+<line x1="480" y1="405" x2="410" y2="420" class="truss-diag"/>
+<line x1="410" y1="435" x2="480" y2="450" class="truss-diag"/>
+<line x1="480" y1="435" x2="410" y2="450" class="truss-diag"/>
+<line x1="410" y1="465" x2="480" y2="480" class="truss-diag"/>
+<line x1="480" y1="465" x2="410" y2="480" class="truss-diag"/>
+<line x1="410" y1="495" x2="480" y2="510" class="truss-diag"/>
+<line x1="480" y1="495" x2="410" y2="510" class="truss-diag"/>
+<line x1="410" y1="525" x2="480" y2="540" class="truss-diag"/>
+<line x1="480" y1="525" x2="410" y2="540" class="truss-diag"/>
+<line x1="410" y1="555" x2="480" y2="570" class="truss-diag"/>
+<line x1="480" y1="555" x2="410" y2="570" class="truss-diag"/>
+<line x1="410" y1="585" x2="480" y2="600" class="truss-diag"/>
+<line x1="480" y1="585" x2="410" y2="600" class="truss-diag"/>
+<line x1="410" y1="615" x2="480" y2="630" class="truss-diag"/>
+<line x1="480" y1="615" x2="410" y2="630" class="truss-diag"/>
+<line x1="365.0" y1="635" x2="525.0" y2="650" class="truss-diag"/>
+<line x1="370.0" y1="650" x2="520.0" y2="665" class="truss-diag"/>
+<line x1="359.0" y1="665" x2="531.0" y2="680" class="truss-diag"/>
+<line x1="364.0" y1="680" x2="526.0" y2="695" class="truss-diag"/>
+<line x1="353.0" y1="695" x2="537.0" y2="710" class="truss-diag"/>
+<line x1="358.0" y1="710" x2="532.0" y2="725" class="truss-diag"/>
+<line x1="347.0" y1="725" x2="543.0" y2="740" class="truss-diag"/>
+<line x1="352.0" y1="740" x2="538.0" y2="755" class="truss-diag"/>
+<line x1="341.0" y1="755" x2="549.0" y2="770" class="truss-diag"/>
+<line x1="346.0" y1="770" x2="544.0" y2="785" class="truss-diag"/>
+<line x1="333.0" y1="785" x2="557.0" y2="800" class="truss-diag"/>
+<line x1="338.0" y1="800" x2="552.0" y2="815" class="truss-diag"/>
+<line x1="321.0" y1="815" x2="569.0" y2="830" class="truss-diag"/>
+<line x1="326.0" y1="830" x2="564.0" y2="845" class="truss-diag"/>
+<line x1="309.0" y1="845" x2="581.0" y2="860" class="truss-diag"/>
+<line x1="314.0" y1="860" x2="576.0" y2="875" class="truss-diag"/>
+<line x1="297.0" y1="875" x2="593.0" y2="890" class="truss-diag"/>
+<line x1="302.0" y1="890" x2="588.0" y2="905" class="truss-diag"/>
+<line x1="285.0" y1="905" x2="605.0" y2="920" class="truss-diag"/>
+<line x1="290.0" y1="920" x2="600.0" y2="935" class="truss-diag"/>
+<circle cx="445" cy="175" r="4" class="hp-marker"/>
+<circle cx="445" cy="175" r="6" fill="none" stroke="#f77f00" stroke-width="0.5"/>
+<text x="455" y="178" class="note-warn">HP-1  250kg SWL</text>
+<circle cx="445" cy="325" r="4" class="hp-marker"/>
+<circle cx="445" cy="325" r="6" fill="none" stroke="#f77f00" stroke-width="0.5"/>
+<text x="455" y="328" class="note-warn">HP-2  250kg SWL</text>
+<circle cx="445" cy="525" r="4" class="hp-marker"/>
+<circle cx="445" cy="525" r="6" fill="none" stroke="#f77f00" stroke-width="0.5"/>
+<text x="455" y="528" class="note-warn">HP-3  250kg SWL</text>
+<circle cx="445" cy="645" r="4" class="hp-marker"/>
+<circle cx="445" cy="645" r="6" fill="none" stroke="#f77f00" stroke-width="0.5"/>
+<text x="455" y="648" class="note-warn">HP-4  250kg SWL</text>
+<circle cx="445" cy="745" r="4" class="hp-marker"/>
+<circle cx="445" cy="745" r="6" fill="none" stroke="#f77f00" stroke-width="0.5"/>
+<text x="455" y="748" class="note-warn">HP-5  250kg SWL</text>
+<circle cx="445" cy="865" r="4" class="hp-marker"/>
+<circle cx="445" cy="865" r="6" fill="none" stroke="#f77f00" stroke-width="0.5"/>
+<text x="455" y="868" class="note-warn">HP-6  250kg SWL</text>
+<line x1="265" y1="125" x2="265" y2="925" class="dim-line"/>
+<line x1="265" y1="125" x2="290" y2="125" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="265" y1="925" x2="290" y2="925" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="260" y="525" text-anchor="middle" transform="rotate(-90,260,525)" class="dim-value">8100 mm</text>
+<line x1="380" y1="115" x2="510" y2="115" class="dim-line"/>
+<line x1="385" y1="115" x2="385" y2="125" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="505" y1="115" x2="505" y2="125" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="445" y="111" text-anchor="middle" class="dim-value">1200 mm</text>
+<line x1="400" y1="375" x2="490" y2="375" class="dim-line"/>
+<line x1="405" y1="375" x2="405" y2="225" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="485" y1="375" x2="485" y2="225" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="445" y="371" text-anchor="middle" class="dim-value">800 mm</text>
+<line x1="380" y1="765" x2="510" y2="765" class="dim-line"/>
+<text x="445" y="761" text-anchor="middle" class="dim-value">1100 mm</text>
+<line x1="280" y1="905" x2="610" y2="905" class="dim-line"/>
+<line x1="295" y1="905" x2="295" y2="925" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="595" y1="905" x2="595" y2="925" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="445" y="901" text-anchor="middle" class="dim-value">3000 mm</text>
+<line x1="615" y1="225" x2="615" y2="625" class="dim-line"/>
+<line x1="615" y1="225" x2="490" y2="225" class="dim-ext" marker-end="url(#arr-org)"/>
+<line x1="615" y1="625" x2="490" y2="625" class="dim-ext" marker-end="url(#arr-org)"/>
+<text x="620" y="425" text-anchor="middle" transform="rotate(90,620,425)" class="dim-value">4000 mm</text>
+<line x1="395" y1="475" x2="495" y2="475" class="section-line"/>
+<circle cx="385" cy="475" r="7" fill="#0a1628" stroke="#f77f00" stroke-width="1"/>
+<circle cx="505" cy="475" r="7" fill="#0a1628" stroke="#f77f00" stroke-width="1"/>
+<text x="385" y="478" text-anchor="middle" class="note-warn">A</text>
+<text x="505" y="478" text-anchor="middle" class="note-warn">A</text>
+<text x="45" y="135" class="title">SECTION A-A  剖面圖 S:1/5</text>
+<rect x="65" y="155" width="100" height="100" class="geom" fill="url(#hatch)"/>
+<circle cx="65" cy="155" r="8" fill="#0d1f3c" stroke="#48cae4" stroke-width="1.2"/>
+<circle cx="165" cy="155" r="8" fill="#0d1f3c" stroke="#48cae4" stroke-width="1.2"/>
+<circle cx="65" cy="255" r="8" fill="#0d1f3c" stroke="#48cae4" stroke-width="1.2"/>
+<circle cx="165" cy="255" r="8" fill="#0d1f3c" stroke="#48cae4" stroke-width="1.2"/>
+<line x1="73" y1="163" x2="157" y2="247" stroke="#48cae4" stroke-width="0.5" opacity="0.5"/>
+<line x1="157" y1="163" x2="73" y2="247" stroke="#48cae4" stroke-width="0.5" opacity="0.5"/>
+<text x="180" y="201" class="dim-value">500</text>
+<text x="65" y="270" class="dim-value">500</text>
+<text x="190" y="235" class="note">Ø50×3mm</text>
+<text x="190" y="247" class="note">AL 6061-T6</text>
+<text x="190" y="259" class="note">TIG Weld</text>
+<text x="45" y="300" class="title">RIGHT SIDE VIEW 右側視圖 S:1/40</text>
+<rect x="95" y="265" width="40" height="160" class="geom" fill="url(#hatch)"/>
+<text x="145" y="341" class="dim-value">600</text>
+<text x="115" y="440" text-anchor="middle" class="note">Depth 600mm</text>
+<text x="725" y="40" class="title">DETAIL B  S:1/10</text>
+<text x="725" y="55" class="note">Headstock/Neck Joint  琴頭/琴頸連接</text>
+<rect x="765" y="75" width="80" height="120" class="geom" fill="url(#hatch)"/>
+<rect x="755" y="65" width="100" height="20" class="geom" fill="#0d1f3c"/>
+<rect x="785" y="85" width="40" height="30" fill="none" stroke="#f77f00" stroke-width="1.5"/>
+<text x="805" y="100" text-anchor="middle" class="note-warn" font-size="7">T-JOINT</text>
+<circle cx="780" cy="145" r="3" fill="none" stroke="#f77f00" stroke-width="0.8"/>
+<circle cx="780" cy="165" r="3" fill="none" stroke="#f77f00" stroke-width="0.8"/>
+<circle cx="830" cy="145" r="3" fill="none" stroke="#f77f00" stroke-width="0.8"/>
+<circle cx="830" cy="165" r="3" fill="none" stroke="#f77f00" stroke-width="0.8"/>
+<text x="805" y="190" text-anchor="middle" class="note-warn" font-size="7">M8 BOLT × 4</text>
+<rect x="775" y="90" width="60" height="8" fill="#48cae4" opacity="0.3"/>
+<text x="805" y="95" text-anchor="middle" class="note" font-size="6">REINF PL 6mm</text>
+<circle cx="445" cy="175" r="15" fill="none" stroke="#f77f00" stroke-width="0.5" stroke-dasharray="3,2"/>
+<text x="445" y="178" text-anchor="middle" class="note-warn" font-size="7">B</text>
+<polyline points="460,175 705,125 720,125" fill="none" stroke="#f77f00" stroke-width="0.4" marker-end="url(#arr-org)"/>
+<text x="725" y="285" class="title">DETAIL C  S:1/10</text>
+<text x="725" y="300" class="note">Neck/Body Joint  琴頸/琴身連接</text>
+<rect x="770" y="305" width="70" height="80" class="geom" fill="url(#hatch)"/>
+<rect x="745" y="365" width="120" height="60" class="geom" fill="url(#hatch)"/>
+<rect x="755" y="360" width="15" height="30" fill="none" stroke="#f77f00" stroke-width="1.2"/>
+<rect x="840" y="360" width="15" height="30" fill="none" stroke="#f77f00" stroke-width="1.2"/>
+<text x="763" y="353" text-anchor="middle" class="note-warn" font-size="6">L-BRACKET</text>
+<line x1="775" y1="365" x2="835" y2="415" stroke="#f77f00" stroke-width="0.6" stroke-dasharray="3,2"/>
+<line x1="835" y1="365" x2="775" y2="415" stroke="#f77f00" stroke-width="0.6" stroke-dasharray="3,2"/>
+<text x="805" y="430" text-anchor="middle" class="note-warn" font-size="7">DIAG BRACE Ø12×2mm</text>
+<circle cx="445" cy="725" r="15" fill="none" stroke="#f77f00" stroke-width="0.5" stroke-dasharray="3,2"/>
+<text x="445" y="728" text-anchor="middle" class="note-warn" font-size="7">C</text>
+<polyline points="460,725 705,375 720,375" fill="none" stroke="#f77f00" stroke-width="0.4" marker-end="url(#arr-org)"/>
+<rect x="700" y="670" width="470" height="100" fill="#0d1f3c" stroke="#00b4d8" stroke-width="1"/>
+<line x1="700" y1="692" x2="1170" y2="692" stroke="#00b4d8" stroke-width="0.5"/>
+<text x="935.0" y="686" text-anchor="middle" class="title" font-size="12">GUITAR TRUSS STRUCTURAL DRAWING</text>
+<text x="935.0" y="708" text-anchor="middle" fill="#90e0ef" font-size="8">吉他 Truss 結構製作圖</text>
+<text x="710" y="720" class="label">PROJECT:</text>
+<text x="780" y="720" class="bom-text">Zoe / Taiwan</text>
+<text x="940" y="720" class="label">CLIENT:</text>
+<text x="1010" y="720" class="bom-text">Zoe</text>
+<text x="710" y="732" class="label">DWG NO.:</text>
+<text x="780" y="732" class="bom-text">GT-002</text>
+<text x="940" y="732" class="label">REV:</text>
+<text x="1010" y="732" class="bom-text">v2.0</text>
+<text x="710" y="744" class="label">SCALE:</text>
+<text x="780" y="744" class="bom-text">1:40 / 1:5 / 1:10</text>
+<text x="940" y="744" class="label">DATE:</text>
+<text x="1010" y="744" class="bom-text">2026-06-23</text>
+<text x="710" y="756" class="label">MATERIAL:</text>
+<text x="780" y="756" class="bom-text">AL 6061-T6</text>
+<text x="940" y="756" class="label">FINISH:</text>
+<text x="1010" y="756" class="bom-text">Black Powder Coat</text>
+<text x="25" y="647" class="title">BILL OF MATERIALS  材料表</text>
+<rect x="25" y="655" width="30" height="16" class="table-header"/>
+<text x="29" y="666" class="bom-hdr">ITEM</text>
+<rect x="55" y="655" width="40" height="16" class="table-header"/>
+<text x="59" y="666" class="bom-hdr">QTY</text>
+<rect x="95" y="655" width="35" height="16" class="table-header"/>
+<text x="99" y="666" class="bom-hdr">UNIT</text>
+<rect x="130" y="655" width="300" height="16" class="table-header"/>
+<text x="134" y="666" class="bom-hdr">DESCRIPTION</text>
+<rect x="430" y="655" width="255" height="16" class="table-header"/>
+<text x="434" y="666" class="bom-hdr">MATERIAL / SPEC</text>
+<rect x="25" y="671" width="30" height="14" class="table-cell"/>
+<text x="29" y="681" class="bom-text">1</text>
+<rect x="55" y="671" width="40" height="14" class="table-cell"/>
+<text x="59" y="681" class="bom-text">8</text>
+<rect x="95" y="671" width="35" height="14" class="table-cell"/>
+<text x="99" y="681" class="bom-text">m</text>
+<rect x="130" y="671" width="300" height="14" class="table-cell"/>
+<text x="134" y="681" class="bom-text">Main Chord Truss Section</text>
+<rect x="430" y="671" width="255" height="14" class="table-cell"/>
+<text x="434" y="681" class="bom-text">AL 6061-T6 Ø50×3mm, TIG Weld</text>
+<rect x="25" y="685" width="30" height="14" class="table-cell"/>
+<text x="29" y="695" class="bom-text">2</text>
+<rect x="55" y="685" width="40" height="14" class="table-cell"/>
+<text x="59" y="695" class="bom-text">1</text>
+<rect x="95" y="685" width="35" height="14" class="table-cell"/>
+<text x="99" y="695" class="bom-text">set</text>
+<rect x="130" y="685" width="300" height="14" class="table-cell"/>
+<text x="134" y="695" class="bom-text">Headstock Connector Plate</text>
+<rect x="430" y="685" width="255" height="14" class="table-cell"/>
+<text x="434" y="695" class="bom-text">AL 6061-T6 10mm, CNC</text>
+<rect x="25" y="699" width="30" height="14" class="table-cell"/>
+<text x="29" y="709" class="bom-text">3</text>
+<rect x="55" y="699" width="40" height="14" class="table-cell"/>
+<text x="59" y="709" class="bom-text">2</text>
+<rect x="95" y="699" width="35" height="14" class="table-cell"/>
+<text x="99" y="709" class="bom-text">set</text>
+<rect x="130" y="699" width="300" height="14" class="table-cell"/>
+<text x="134" y="709" class="bom-text">L-Bracket Joint</text>
+<rect x="430" y="699" width="255" height="14" class="table-cell"/>
+<text x="434" y="709" class="bom-text">AL 6061-T6 6mm, M8 Bolts</text>
+<rect x="25" y="713" width="30" height="14" class="table-cell"/>
+<text x="29" y="723" class="bom-text">4</text>
+<rect x="55" y="713" width="40" height="14" class="table-cell"/>
+<text x="59" y="723" class="bom-text">6</text>
+<rect x="95" y="713" width="35" height="14" class="table-cell"/>
+<text x="99" y="723" class="bom-text">pc</text>
+<rect x="130" y="713" width="300" height="14" class="table-cell"/>
+<text x="134" y="723" class="bom-text">Hanging Point Assembly</text>
+<rect x="430" y="713" width="255" height="14" class="table-cell"/>
+<text x="434" y="723" class="bom-text">SWL 250kg, Ø6mm Galv Cable</text>
+<rect x="25" y="727" width="30" height="14" class="table-cell"/>
+<text x="29" y="737" class="bom-text">5</text>
+<rect x="55" y="727" width="40" height="14" class="table-cell"/>
+<text x="59" y="737" class="bom-text">4</text>
+<rect x="95" y="727" width="35" height="14" class="table-cell"/>
+<text x="99" y="737" class="bom-text">pc</text>
+<rect x="130" y="727" width="300" height="14" class="table-cell"/>
+<text x="134" y="737" class="bom-text">Chain Hoist 手拉葫蘆</text>
+<rect x="430" y="727" width="255" height="14" class="table-cell"/>
+<text x="434" y="737" class="bom-text">300kg Capacity</text>
+<rect x="25" y="741" width="30" height="14" class="table-cell"/>
+<text x="29" y="751" class="bom-text">6</text>
+<rect x="55" y="741" width="40" height="14" class="table-cell"/>
+<text x="59" y="751" class="bom-text">1</text>
+<rect x="95" y="741" width="35" height="14" class="table-cell"/>
+<text x="99" y="751" class="bom-text">pc</text>
+<rect x="130" y="741" width="300" height="14" class="table-cell"/>
+<text x="134" y="751" class="bom-text">Diagonal Bracing Ø12×2mm</text>
+<rect x="430" y="741" width="255" height="14" class="table-cell"/>
+<text x="434" y="751" class="bom-text">AL 6061-T6 Tube</text>
+<rect x="25" y="755" width="30" height="14" class="table-cell"/>
+<text x="29" y="765" class="bom-text">7</text>
+<rect x="55" y="755" width="40" height="14" class="table-cell"/>
+<text x="59" y="765" class="bom-text">1</text>
+<rect x="95" y="755" width="35" height="14" class="table-cell"/>
+<text x="99" y="765" class="bom-text">pc</text>
+<rect x="130" y="755" width="300" height="14" class="table-cell"/>
+<text x="134" y="765" class="bom-text">Powder Coating Finish</text>
+<rect x="430" y="755" width="255" height="14" class="table-cell"/>
+<text x="434" y="765" class="bom-text">Black 60-80μm, ASTM B117</text>
+<text x="25" y="580" class="title">NOTES  備註</text>
+<text x="35" y="594" class="note">1. ALL DIMENSIONS IN MILLIMETERS.  所有尺寸單位為公釐。</text>
+<text x="35" y="606" class="note">2. ALUMINUM WELDING PER AWS D1.2.  鋁合金焊接按 AWS D1.2 標準。</text>
+<text x="35" y="618" class="note">3. SAFETY FACTOR ≥5:1 FOR ALL RIGGING.  所有吊掛安全係數 ≥5:1。</text>
+<text x="35" y="630" class="note">4. TRUSS CONNECTIONS USE MFG-SPECIFIED FITTINGS.  使用原廠接頭。</text>
+<text x="35" y="642" class="note">5. FINISH: BLACK POWDER COATING 60-80μm.  表面黑色粉體塗裝。</text>
+<text x="35" y="654" class="note">6. STRUCTURE WEIGHT ~350kg.  結構總重約 350 公斤。</text>
+</svg>

@@ -98,14 +98,21 @@ class DEXClient:
 
 
 class UniswapV2Client(DEXClient):
-    """Client for Uniswap V2 and compatible DEXes."""
+    """Client for Uniswap V2 and compatible DEXes (QuickSwap, PancakeSwap, etc.)."""
 
-    def __init__(self, web3: Web3, config=None):
-        """Initialize Uniswap V2 client."""
+    def __init__(self, web3: Web3, config=None, dex_name: str = 'uniswap_v2'):
+        """Initialize Uniswap V2 client.
+
+        Args:
+            web3: Web3 instance
+            config: Web3Config instance
+            dex_name: DEX config key (e.g. 'uniswap_v2', 'quickswap', 'pancakeswap_v2')
+        """
         super().__init__(web3, config)
+        self.dex_name = dex_name
 
-        # Get router and factory addresses from config
-        dex_config = self.config.dex_configs.get('uniswap_v2', {})
+        # Get router and factory addresses from config using the actual DEX name
+        dex_config = self.config.dex_configs.get(dex_name, {})
         router_address = dex_config.get('router')
         factory_address = dex_config.get('factory')
 
@@ -251,7 +258,9 @@ class UniswapV2Client(DEXClient):
         self,
         token_in: str,
         token_out: str,
-        amount_in: float
+        amount_in: float,
+        token_in_decimals: int = 18,
+        token_out_decimals: int = 18,
     ) -> Tuple[Optional[float], Optional[float]]:
         """Get expected output amount for a swap on Uniswap V2."""
         if not self.router:
@@ -259,24 +268,23 @@ class UniswapV2Client(DEXClient):
             return None, None
 
         try:
-            # Convert amount to wei (assuming 18 decimals for now)
-            # TODO: Handle different token decimals
-            amount_in_wei = self.web3.to_wei(amount_in, 'ether')
+            # Convert amount to raw units based on input token decimals
+            amount_in_raw = int(amount_in * 10 ** token_in_decimals)
 
             # Build path
             path = [token_in, token_out]
 
             # Get amounts out
-            amounts = self.router.functions.getAmountsOut(amount_in_wei, path).call()
+            amounts = self.router.functions.getAmountsOut(amount_in_raw, path).call()
 
             if len(amounts) < 2:
                 logger.error("Invalid amounts returned")
                 return None, None
 
-            expected_output = float(self.web3.from_wei(amounts[-1], 'ether'))
+            # Convert output to float using correct decimals
+            expected_output = float(amounts[-1]) / (10 ** token_out_decimals)
 
             # Calculate price impact (simplified)
-            # TODO: Implement proper price impact calculation
             price_impact = 0.0  # Placeholder
 
             logger.debug(
@@ -297,7 +305,9 @@ class UniswapV2Client(DEXClient):
         amount_in: float,
         recipient: str,
         slippage_bps: int = 500,
-        deadline_minutes: int = 30
+        deadline_minutes: int = 30,
+        token_in_decimals: int = 18,
+        token_out_decimals: int = 18,
     ) -> Optional[Dict[str, Any]]:
         """Build a swap transaction for Uniswap V2."""
         if not self.router:
@@ -305,18 +315,22 @@ class UniswapV2Client(DEXClient):
             return None
 
         try:
-            # Get expected output
-            expected_output, price_impact = self.get_price(token_in, token_out, amount_in)
+            # Get expected output with correct decimals
+            expected_output, price_impact = self.get_price(
+                token_in, token_out, amount_in,
+                token_in_decimals=token_in_decimals,
+                token_out_decimals=token_out_decimals,
+            )
             if expected_output is None:
                 logger.error("Failed to get price quote")
                 return None
 
             # Calculate minimum output with slippage
             slippage_multiplier = 1.0 - (slippage_bps / 10000.0)
-            amount_out_min = int(expected_output * slippage_multiplier * 10**18)  # Convert to wei
+            amount_out_min = int(expected_output * slippage_multiplier * 10**token_out_decimals)
 
-            # Convert amount to wei
-            amount_in_wei = self.web3.to_wei(amount_in, 'ether')
+            # Convert amount to raw input units
+            amount_in_raw = int(amount_in * 10 ** token_in_decimals)
 
             # Build path
             path = [token_in, token_out]
@@ -337,14 +351,14 @@ class UniswapV2Client(DEXClient):
                     deadline
                 ).build_transaction({
                     'from': recipient,
-                    'value': amount_in_wei,
+                    'value': amount_in_raw,
                     'gas': 300000,
                     'gasPrice': self.web3.eth.gas_price,
                 })
             else:
                 # Use swapExactTokensForTokens (ERC20 -> ERC20)
                 transaction_data = self.router.functions.swapExactTokensForTokens(
-                    amount_in_wei,
+                    amount_in_raw,
                     amount_out_min,
                     path,
                     recipient,
@@ -479,6 +493,7 @@ class DEXClientFactory:
             'uniswap_v2': UniswapV2Client,
             'pancakeswap_v2': UniswapV2Client,  # Same interface
             'sushiswap': UniswapV2Client,  # Same interface
+            'quickswap': UniswapV2Client,  # QuickSwap on Polygon — same interface
         }
 
         client_class = clients.get(dex_name)
@@ -487,6 +502,8 @@ class DEXClientFactory:
             return None
 
         try:
+            if client_class == UniswapV2Client:
+                return client_class(web3, config, dex_name=dex_name)
             return client_class(web3, config)
         except Exception as e:
             logger.error(f"Failed to create {dex_name} client: {e}")
@@ -495,4 +512,4 @@ class DEXClientFactory:
     @staticmethod
     def get_supported_dexes() -> List[str]:
         """Get list of supported DEXes."""
-        return ['uniswap_v2', 'pancakeswap_v2', 'sushiswap']
+        return ['uniswap_v2', 'pancakeswap_v2', 'sushiswap', 'quickswap']

@@ -245,7 +245,7 @@ class TxSimulator:
             address=token_address,
             abi=[approve_abi]
         )
-        approve_data = contract.encodeABI(fn_name="approve", args=[spender, amount])
+        approve_data = contract.encode_abi("approve", args=[spender, amount])
 
         tx_params = {
             'to': token_address,

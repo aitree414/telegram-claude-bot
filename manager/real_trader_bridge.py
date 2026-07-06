@@ -121,8 +121,15 @@ class RealTradeBridge:
         amount_eth: float,
         confidence: float,
         reason: str = "",
+        base_token: Optional[str] = None,
+        base_token_decimals: int = 18,
     ) -> Dict[str, Any]:
         """Execute a real on-chain BUY via the orchestrator pipeline.
+
+        For non-native swaps (e.g. USDC -> Token on Polygon), pass the
+        base_token address and its decimals.  The amount_eth is then
+        interpreted in base_token units (e.g. amount_eth=10 with
+        base_token=USDC means $10 USDC).
 
         Returns
         -------
@@ -137,6 +144,12 @@ class RealTradeBridge:
         if chain is None:
             return {"success": False, "error": f"unknown_chain:{mapping['chain']}"}
 
+        # Use USDC as base token for Polygon by default
+        usdc_address = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+        if chain == Chain.POLYGON and not base_token:
+            base_token = usdc_address
+            base_token_decimals = 6
+
         # Create a signal record in the database for tracking
         signal_data = {
             "signal_type": SignalType.BUY,
@@ -144,14 +157,19 @@ class RealTradeBridge:
             "token_address": mapping["address"],
             "token_symbol": symbol.upper(),
             "token_name": symbol.upper(),
-            "base_token": None,
+            "base_token": base_token,
             "confidence_score": min(confidence, 1.0),
             "risk_score": 1.0 - min(confidence, 1.0),
             "suggested_amount_eth": amount_eth,
             "suggested_price": None,
             "stop_loss": None,
             "take_profit": None,
-            "signal_data": {"source": "auto_trader_real", "reason": reason},
+            "signal_data": {
+                "source": "auto_trader_real",
+                "reason": reason,
+                "base_token_decimals": base_token_decimals,
+                "token_out_decimals": mapping.get("decimals", 18),
+            },
             "generated_at": datetime.utcnow(),
             "processed": True,  # Pre-set as processed since bridge routes directly
         }

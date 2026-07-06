@@ -1,0 +1,275 @@
+{
+  "items": [
+    {
+      "id": 2,
+      "symbol": "2303.TW",
+      "type": "sl",
+      "trigger_price": 93.5,
+      "shares": 20.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 3,
+      "symbol": "2303.TW",
+      "type": "tp",
+      "trigger_price": 143.0,
+      "shares": 20.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 30%",
+      "_triggered_price": 143.5
+    },
+    {
+      "id": 4,
+      "symbol": "2330.TW",
+      "type": "sl",
+      "trigger_price": 1925.25,
+      "shares": 2.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 5,
+      "symbol": "2330.TW",
+      "type": "tp",
+      "trigger_price": 2944.5,
+      "shares": 2.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 30%"
+    },
+    {
+      "id": 6,
+      "symbol": "2382.TW",
+      "type": "sl",
+      "trigger_price": 260.1,
+      "shares": 2.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 7,
+      "symbol": "2382.TW",
+      "type": "tp",
+      "trigger_price": 397.8,
+      "shares": 2.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 30%",
+      "_triggered_price": 399.0
+    },
+    {
+      "id": 8,
+      "symbol": "2881.TW",
+      "type": "sl",
+      "trigger_price": 81.68,
+      "shares": 20.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 9,
+      "symbol": "2881.TW",
+      "type": "tp",
+      "trigger_price": 124.93,
+      "shares": 20.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 30%",
+      "_triggered_price": 125.0
+    },
+    {
+      "id": 10,
+      "symbol": "2882.TW",
+      "type": "sl",
+      "trigger_price": 66.22,
+      "shares": 64.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 11,
+      "symbol": "2882.TW",
+      "type": "tp",
+      "trigger_price": 101.27,
+      "shares": 64.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 30%",
+      "_triggered_price": 102.0
+    },
+    {
+      "id": 12,
+      "symbol": "2303.TW",
+      "type": "sl",
+      "trigger_price": 93.5,
+      "shares": 20.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 13,
+      "symbol": "2303.TW",
+      "type": "tp",
+      "trigger_price": 154.0,
+      "shares": 20.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 40%",
+      "_triggered_price": 154.5
+    },
+    {
+      "id": 14,
+      "symbol": "2330.TW",
+      "type": "sl",
+      "trigger_price": 1925.25,
+      "shares": 2.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 15,
+      "symbol": "2330.TW",
+      "type": "tp",
+      "trigger_price": 3171.0,
+      "shares": 2.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 40%"
+    },
+    {
+      "id": 16,
+      "symbol": "2382.TW",
+      "type": "sl",
+      "trigger_price": 260.1,
+      "shares": 2.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 17,
+      "symbol": "2382.TW",
+      "type": "tp",
+      "trigger_price": 428.4,
+      "shares": 2.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 40%",
+      "_triggered_price": 429.5
+    },
+    {
+      "id": 18,
+      "symbol": "2881.TW",
+      "type": "sl",
+      "trigger_price": 81.68,
+      "shares": 20.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 19,
+      "symbol": "2881.TW",
+      "type": "tp",
+      "trigger_price": 134.54,
+      "shares": 20.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 40%",
+      "_triggered_price": 136.0
+    },
+    {
+      "id": 20,
+      "symbol": "2882.TW",
+      "type": "sl",
+      "trigger_price": 66.22,
+      "shares": 64.0,
+      "status": "active",
+      "created_at": "2026-05-16",
+      "note": "auto 15%"
+    },
+    {
+      "id": 21,
+      "symbol": "2882.TW",
+      "type": "tp",
+      "trigger_price": 109.06,
+      "shares": 64.0,
+      "status": "triggered",
+      "created_at": "2026-05-16",
+      "note": "auto 40%",
+      "_triggered_price": 109.5
+    },
+    {
+      "id": 22,
+      "symbol": "2317.TW",
+      "type": "sl",
+      "trigger_price": 222.28,
+      "shares": 38,
+      "status": "active",
+      "created_at": "2026-05-28",
+      "note": "auto SL (15%)"
+    },
+    {
+      "id": 23,
+      "symbol": "2317.TW",
+      "type": "tp",
+      "trigger_price": 339.95,
+      "shares": 38,
+      "status": "active",
+      "created_at": "2026-05-28",
+      "note": "auto TP (30%)"
+    },
+    {
+      "id": 24,
+      "symbol": "2324.TW",
+      "type": "sl",
+      "trigger_price": 28.56,
+      "shares": 1,
+      "status": "active",
+      "created_at": "2026-05-28",
+      "note": "auto SL (15%)"
+    },
+    {
+      "id": 25,
+      "symbol": "2324.TW",
+      "type": "tp",
+      "trigger_price": 43.68,
+      "shares": 1,
+      "status": "triggered",
+      "created_at": "2026-05-28",
+      "note": "auto TP (30%)",
+      "_triggered_price": 44.35
+    },
+    {
+      "id": 26,
+      "symbol": "META",
+      "type": "sl",
+      "trigger_price": 16428.05,
+      "shares": 3,
+      "status": "triggered",
+      "created_at": "2026-06-09",
+      "note": "auto SL (15%)",
+      "_triggered_price": 585.39
+    },
+    {
+      "id": 27,
+      "symbol": "META",
+      "type": "tp",
+      "trigger_price": 25125.25,
+      "shares": 3,
+      "status": "active",
+      "created_at": "2026-06-09",
+      "note": "auto TP (30%)"
+    }
+  ],
+  "next_id": 28
+}

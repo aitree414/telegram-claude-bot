@@ -163,8 +163,13 @@ class GasOptimizer:
             Estimated gas limit or None
         """
         try:
-            # Try eth_estimateGas
-            gas_limit = self.web3.eth.estimate_gas(transaction)
+            # Ensure 'from' is set if wallet is available (needed for some ERC-20 calls)
+            tx = dict(transaction)
+            if 'from' not in tx:
+                wallet_addr = self.config.wallet_address
+                if wallet_addr:
+                    tx['from'] = wallet_addr
+            gas_limit = self.web3.eth.estimate_gas(tx)
             return gas_limit
 
         except Exception as e:

@@ -1,120 +1,124 @@
-# CLAUDE.md - 專案指令與行為規範
+# PROJECT
+Name: telegram-claude-bot
+Purpose: 這個專案採用「三層分離」架構來解決 Claude Code Router 和 DeepSeek API 的 Token 限制問題，確保系統的穩定性和可維護性。
+Stage: development
 
-## 身份
-你是一位資深全端工程師兼量化交易架構師，同時也是展覽策劃顧問。你負責兩大核心任務：
-1. 開發 AI 量化交易與投資分析系統
-2. 協助展覽策劃工作（HKHM 等項目）
+# STACK
+Language: Python
 
-## 核心原則
+# FOLDER STRUCTURE
+accounting/ — Application code
+ai_quant/ — Application code
+analysis/ — Application code
+bot/ — Application code
+broker/ — Application code
+contracts/ — Application code
+data/ — Application code
+deploy/ — Application code
+docs/ — Documentation
+logs/ — Application code
+manager/ — Application code
+onchain/ — Application code
 
-### 溝通風格
-- 使用繁體中文回應
-- 簡潔直接，不要廢話
-- 遇到不確定的事情，直接問我，不要猜測
-- 展示權衡方案時用表格比較
+# CONVENTIONS
+- kebab-case file naming
+- Async/await pattern for async operations
 
-### 編碼原則
-- 用最少的程式碼解決問題，不做投機性開發
-- 只修改需要修改的部分，不要重構無關的程式碼
-- 每次修改後必須說明改了什麼、為什麼改
-- 所有 API 調用必須有錯誤處理和重試機制
-- 環境變數使用 os.environ.get() 並提供預設值
+# RECENT CHANGES
+2026-06-29
+- Created Pui Ching Entrance Display quotation (HKD $1,231,700) from 27-page technical drawing set for 裘槎科學週
+- Generated PuiChing_EntranceDisplay_Quotation.xlsx — 9 categories, 30+ line items, professional format
 
-### 任務執行
-- 複雜任務（超過 3 個步驟）必須先用 /plan 生成計畫讓我確認
-- 每完成一個步驟，簡短報告進度
-- 修改完成後，主動建議如何測試
+2026-06-25
+- Created dxf_detail_fab.py — DXF detail drawing generator using ezdxf for Layout-compatible output with proper layers (A-FURN-OUTL, A-FURN-HIDD, A-DIMS, A-ANNO-CALLOUT, A-FURN-SECT, etc.), dimensions, hatch patterns, and title block
+- Generated 3 production DXF files: plinth (G0304_1F_3000), bench (G05_1F_3003), table (G0304_1F_3001) — importable into SketchUp Layout
 
-## 專案架構
+2026-06-25
+- Created drawing_detail_fab.py — new DETAIL fabrication drawing generator with multi-view support (Elevation A/B/C, Plan, Section, Detail), FI_xx finish references, material callouts, professional title block matching Museum Studio format, revision history, BOM, and component generators for plinth/bench/table
+- Created cad_plinth_detail.py — generated G0304_1F_3000-00_SW.02-PLINTH DETAILS_v2.svg (production detail drawing for Meet Mona Lisa project plinth with Elevation A, Plan, Section A-A, Detail B, finish schedule, BOM, title block)
+- Created cad_bench_detail.py — generated G05_1F_3003-05_SW.11-CURVE BENCH_v2.svg (curve bench detail drawing with elevation, plan showing arc geometry, section, cushion fixing detail)
 
-### 目錄結構
-```
-telegram-claude-bot/
-├── main.py                    # 系統入口
-├── bot/
-│   ├── claude_client.py       # DeepSeek API 客戶端
-│   ├── stock.py               # 股票分析模組（台股/港股/美股）
-│   ├── portfolio.py           # 投資組合管理
-│   ├── alerts.py              # 價格提醒系統
-│   ├── watchlist.py           # 自選觀察清單
-│   ├── poly_analyzer.py       # Polymarket 分析
-│   └── memory.py              # SQLite 記憶系統
-├── strategies/                 # 量化交易策略（開發中）
-│   ├── backtest_engine.py     # 夜間回測引擎
-│   ├── grid_trading.py        # 網格交易策略
-│   ├── sentiment_analyzer.py  # 情緒分析爬蟲
-│   └── onchain_monitor.py     # 鏈上監控
-├── data/
-│   ├── portfolio/             # 投資組合數據
-│   ├── historical/            # 歷史股價數據
-│   ├── results/               # 回測結果
-│   └── logs/                  # 執行日誌
-├── web-apps/                   # Web 儀表板（port 8888）
-│   ├── wife_portfolio.html    # 老婆投資組合（主頁面）
-│   ├── stock_analysis.html    # 股票分析頁面
-│   ├── backtest_results.html  # 回測結果頁面
-│   ├── tasks.html             # 任務追蹤儀表板
-│   ├── system_status.html     # 系統狀態
-│   └── js/                    # 前端 JavaScript
-├── exhibition/                 # 展覽策劃工作區
-│   ├── HKHM/                  # 香港歷史博物館項目
-│   ├── checklists/            # 檢查表
-│   └── schedules/             # 時間表
-├── backtester/                 # 回測工具
-└── frontend/                   # 回測前端頁面
-```
+2026-06-25
+- Created drawing_cad.py — CAD-style production drawing generator (white bg, black linework, title block, multi-view, matching 08 Collective fabrication standard)
+- Created cad_guitar_truss.py — Guitar Truss v3 A3 production drawing with front/side views, section A-A, detail B/C, BOM, notes, rigging detail
+- Generated Guitar_Truss_工程圖_v3.svg (46KB, XML valid) and 製作圖_v3.html wrapper
+- Generated Zoe_Taiwan_Guitar_Truss_Quotation_v2.xlsx — 6 categories, 30+ line items
+- Added xml_escape() to drawing_cad.py for proper XML special character handling
 
-### 技術棧
-- Python 3.9
-- DeepSeek API（OpenAI 相容格式）
-- yfinance（股票數據）
-- pandas, numpy（數據分析）
-- APScheduler（定時任務）
-- SQLite（記憶系統）
-- HTML/CSS/JavaScript（Web 儀表板）
-- backtrader（回測引擎，計劃中）
-- web3.py（鏈上監控，計劃中）
+2026-06-22
+- Updated 木作生產圖_v2.html → v3.0 with designer CAD cross-reference
+- Added 28-item material index (PT/LM/VT/GL/MT/WP) from 貝貝 P-02
+- Updated Zone 1 entry display to D1-02 specs (LM 07, GL 01/03, ⌀400)
+- Updated Zone 2 counter to D1-01 specs (LM 02/03, PT 02, POS position)
+- Updated Zone 5 apparel cabinets to D1-05 specs (LM 08, metal framing)
+- Updated Zone 6 window display to D1-09 specs (LM 05, ⌀40 tubes, 3mm acrylic)
+- Updated Zone 7/8 tennis/badminton to D1-10 specs (LM 03 surface, PT 03 paint, MT 02/03 pegboards)
+- Added Zone 7 tennis seating from D1-11 (drawer cabinets + foam cushion)
+- Added CAD drawing index table (D1-01~D1-11, P-02) mapping to all items
+- Updated fitting room to WP 01 gray wallpaper FE76657
 
-### Web 儀表板（port 8888）
-- 主頁面：wife_portfolio.html（老婆的投資組合）
-- 包含：持股明細、即時報價、損益計算、股票分析
-- 所有頁面都在 http://localhost:8888/ 下
+2026-06-06
+- SketchUp 自動化匯出：成功從 yonex_260604.skp (620MB) 匯出 56 個 Scene + 7 個標準視角共 63 張 PNG 到木作/skp_exports/
+- 解決 SketchUp 2023 macOS RubyStartup/Plugin/GUI 自動化問題，最終通過 Ruby Console load 指令完成匯出
+- 修正 Camera up vector 平行錯誤，更新標準視角定義
 
-### 環境變數
-- DEEPSEEK_API_KEY: DeepSeek API 金鑰
+2026-06-01
+- Updated dashboard_server.py (8890): serve v3 wife_portfolio.html at /, proxy /api/* and /db/* to backend on 8888
+- Updated cloudflared config: vivian.08creative.cc → localhost:8890
 
-## 已知問題與限制
+2026-06-01
+- Add yonex_electrical_designer.py on port 8893 — interactive LIGHT + OUTLET floor plan editor with drag-drop palette, pre-populated positions from quotation/equipment analysis, circuit grouping, and PDF generation
 
-### DeepSeek API 限制
-- 最大 context: 131072 tokens
-- 不支援圖片/文件分析
-- 對話過長會觸發 context_length_exceeded 錯誤
-- 解決方案：使用 /compact 壓縮上下文
+2026-06-01
+- Fix CCTV designer PDF download: Content-Disposition header with Chinese characters corrupted HTTP response (RFC 6266), changed to ASCII-only + UTF-8 encoding syntax
 
-### 安全規則
-- API key 絕不能出現在前端 HTML 或日誌中
-- 交易相關操作必須有確認機制
+2026-05-27
+- Add DayTraderSim (manager/day_trader_sim.py) — 獨立當沖模擬系統，30k TWD 資金，支援 buy/sell/position tracking/committee signal integration
+- Add 4 Telegram commands: /daybuy, /daysell, /daytrade, /dayideas
+- Wire into main.py — DayTraderSim instance + handler registration
 
-## 兩大工作方向
+2026-05-25
+- Add news sentiment analysis to committee_service.py (Google News RSS + Chinese keyword scoring)
+- Enhanced chat endpoint: committee data + DeepSeek NLG for natural language responses with news context
 
-### 方向一：AI 賺錢工具
-1. 股票分析系統（已有基礎，需整合到 Web）
-2. 量化回測引擎（開發中）
-3. 網格交易策略（計劃中）
-4. 情緒分析爬蟲（計劃中）
-5. Polymarket 預測分析（已有基礎）
-6. 鏈上大戶監控（未來）
+2026-05-25
+- Replace DeepSeek API with AI committee data for chat analysis questions in wife portfolio dashboard
 
-### 方向二：展覽策劃助手
-1. 項目進度追蹤
-2. 檢查表管理
-3. 文件整理與生成
-4. 時間表規劃
-5. 供應商聯絡管理
+2026-05-16
+- Added add SL/TP, dividend calendar, rebalancing, charts, performance reports, alert system
+- Added consolidate project directory, add 400k sim portfolio, fix PM2 deployment
 
-## 常用指令
+2026-05-15
+- [fix] 修復圖片分析失敗和DSML洩露
+- Added add committee-based auto-trading and Telegram push notification
+- Added add Telegram push notification and /committee command for AI committee
+- Added integrate AI investment committee with daily analysis pipeline and dashboard
 
-### 啟動 Web 伺服器
-```bash
-cd ~/web-apps && python3 -m http.server 8888 &
-```
+2026-05-14
+- Initial commit: AI Quant Workspace structure and docs
+- Added add Polymarket integration, strategy engine, crypto backtest, and project documentation
+
+2026-04-30
+- Added implement multi-persona AI analysis, auto-trader, and real on-chain execution
+
+2026-04-28
+- Added implement accounting system enhancements - year dashboard, suppliers, OCR, exchange rates, backup
+
+# 視覺處理規範 (Vision SOP)
+- ⚠️ 本開發環境已安裝 Tesseract OCR 工具。
+- 只要使用者要求讀取圖片（.jpg, .png 等）或解析圖片內的文字，**絕對禁止**回答「我無法看圖片」。
+- 遇到圖片時，你必須主動使用終端機指令：`tesseract [圖片路徑] stdout` 來獲取文字，並根據輸出的純文字結果來完成後續任務。
+
+# HOW CLAUDE SHOULD OPERATE
+- Preserve existing architecture patterns and folder structure
+- Avoid introducing duplicate logic — check existing utilities first
+- Update CLAUDE.md after significant architectural changes
+
+# CLAUDE PREFERENCES
+_Auto-learned from 1 observation. Last updated: 2026-05-24_
+
+## Workflow
+- Use conventional commits format (feat:, fix:, chore:, etc.) _(weak signal)_
+
+# CURRENT TASK
+Completed fabrication detail drawing module (drawing_detail_fab.py) and two production drawings. Awaiting user review.

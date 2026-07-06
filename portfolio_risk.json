@@ -1,12 +1,12 @@
 {
-  "date": "2026-05-14",
-  "stock_trades_today": 3,
+  "date": "2026-06-09",
+  "stock_trades_today": 1,
   "polymarket_trades_today": 0,
-  "total_trades_today": 3,
+  "total_trades_today": 1,
   "daily_loss": 0.0,
   "daily_polymarket_pnl": 0.0,
   "daily_stock_pnl": 0.0,
   "total_polymarket_pnl": 0.0,
   "total_stock_pnl": 0.0,
-  "peak_portfolio_value": 0.0
+  "peak_portfolio_value": 588462.8846866181
 }

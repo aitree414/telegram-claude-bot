@@ -256,7 +256,11 @@ def _compute_fundamental_score(fund: dict) -> Tuple[int, list]:
 
 
 def get_current_price(symbol: str) -> Optional[float]:
-    """Return current price as float, or None if unavailable."""
+    """Return current price as float, or None if unavailable.
+
+    Note: US stock prices are returned in USD. Callers must convert
+    using USD_TWD_RATE for TWD-denominated portfolios.
+    """
     symbol = _normalize_symbol(symbol)
 
     # Define retryable exceptions (network errors)
@@ -286,6 +290,22 @@ def get_current_price(symbol: str) -> Optional[float]:
     except Exception:
         # Other unexpected errors
         return None
+
+
+def get_current_price_with_currency(symbol: str) -> tuple[Optional[float], str]:
+    """Return (price, currency) tuple. Currency is 'USD', 'TWD', or ''.
+
+    US stocks return USD prices; TW stocks return TWD prices.
+    Use this when you need to know the currency for portfolio conversion.
+    """
+    symbol = _normalize_symbol(symbol)
+    try:
+        info = yf.Ticker(symbol).info
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        currency = info.get("currency", "")
+        return price, currency
+    except Exception:
+        return None, ""
 
 
 def get_stock_info(symbol: str) -> str:

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1190 841" width="1190" height="841">
+<style>
+  text { font-family: "Courier New", "Lucida Console", "Microsoft JhengHei", monospace; }
+  .title-lg { fill: #caf0f8; font-size: 18px; font-weight: 700; letter-spacing: 0.05em; }
+  .title { fill: #caf0f8; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; }
+  .subtitle { fill: #90e0ef; font-size: 9px; }
+  .label { fill: #00b4d8; font-size: 9px; font-weight: 600; }
+  .label-sm { fill: #48cae4; font-size: 7px; }
+  .dim-value { fill: #f77f00; font-size: 8px; font-weight: 600; }
+  .dim-line { stroke: #f77f00; stroke-width: 0.5; stroke-dasharray: 3,2; }
+  .dim-ext { stroke: #f77f00; stroke-width: 0.3; }
+  .note { fill: #90e0ef; font-size: 7px; }
+  .note-warn { fill: #f77f00; font-size: 7px; }
+  .geom { fill: none; stroke: #48cae4; stroke-width: 1.2; }
+  .geom-fill { fill: #0d1f3c; stroke: #48cae4; stroke-width: 1; }
+  .wall { fill: #0d1f3c; stroke: #00b4d8; stroke-width: 1.2; }
+  .grid-minor { stroke: #112240; stroke-width: 0.3; }
+  .grid-major { stroke: #1a3a5c; stroke-width: 0.5; }
+  .hatch { fill: url(#hatch); stroke: #48cae4; stroke-width: 0.5; }
+  .bom-text { fill: #caf0f8; font-size: 7px; }
+  .bom-hdr { fill: #00b4d8; font-size: 7px; font-weight: 700; }
+  .table-header { fill: #0d1f3c; stroke: #00b4d8; stroke-width: 0.5; }
+  .table-cell { fill: #0a1628; stroke: #00b4d8; stroke-width: 0.5; }
+</style>
+<defs>
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" class="grid-minor"/>
+  </pattern>
+  <pattern id="grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
+    <path d="M 100 0 L 0 0 0 100" fill="none" class="grid-major"/>
+  </pattern>
+  <marker id="arr-org" markerWidth="5" markerHeight="3.5" refX="4" refY="1.75" orient="auto">
+    <polygon points="0 0, 5 1.75, 0 3.5" fill="#f77f00"/>
+  </marker>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="6" stroke="#00b4d8" stroke-width="0.2" opacity="0.3"/>
+  </pattern>
+</defs>
+<rect width="1190" height="841" fill="#0a1628"/>
+<rect width="1190" height="841" fill="url(#grid)"/>
+<rect width="1190" height="841" fill="url(#grid-major)"/>
+<rect x="15" y="15" width="1160" height="811" fill="none" stroke="#00b4d8" stroke-width="1"/>
+<rect x="18" y="18" width="1154" height="805" fill="none" stroke="#00b4d8" stroke-width="0.3"/>
+<text x="595" y="45" text-anchor="middle" class="title-lg">EXHIBITION FLOOR PLAN</text>
+<text x="595" y="62" text-anchor="middle" fill="#00b4d8" font-size="14">展位平面配置圖</text>
+<text x="595" y="78" text-anchor="middle" class="subtitle">DWG: EP-001 | Rev: v1 | Scale: 1:100 | Date: 2026-06-25 | Client: Sample Client</text>
+<text x="25" y="642" class="title">BILL OF MATERIALS  材料表</text>
+<rect x="25" y="650" width="30" height="16" class="table-header"/>
+<text x="29" y="661" class="bom-hdr">ITEM</text>
+<rect x="55" y="650" width="40" height="16" class="table-header"/>
+<text x="59" y="661" class="bom-hdr">QTY</text>
+<rect x="95" y="650" width="35" height="16" class="table-header"/>
+<text x="99" y="661" class="bom-hdr">UNIT</text>
+<rect x="130" y="650" width="300" height="16" class="table-header"/>
+<text x="134" y="661" class="bom-hdr">DESCRIPTION</text>
+<rect x="430" y="650" width="250" height="16" class="table-header"/>
+<text x="434" y="661" class="bom-hdr">SPEC</text>
+<rect x="25" y="666" width="30" height="14" class="table-cell"/>
+<text x="29" y="676" class="bom-text">1</text>
+<rect x="55" y="666" width="40" height="14" class="table-cell"/>
+<text x="59" y="676" class="bom-text">1</text>
+<rect x="95" y="666" width="35" height="14" class="table-cell"/>
+<text x="99" y="676" class="bom-text">set</text>
+<rect x="130" y="666" width="300" height="14" class="table-cell"/>
+<text x="134" y="676" class="bom-text">Main Structure</text>
+<rect x="430" y="666" width="250" height="14" class="table-cell"/>
+<text x="434" y="676" class="bom-text">AL6061 Truss 500×500mm</text>
+<rect x="25" y="680" width="30" height="14" class="table-cell"/>
+<text x="29" y="690" class="bom-text">2</text>
+<rect x="55" y="680" width="40" height="14" class="table-cell"/>
+<text x="59" y="690" class="bom-text">2</text>
+<rect x="95" y="680" width="35" height="14" class="table-cell"/>
+<text x="99" y="690" class="bom-text">set</text>
+<rect x="130" y="680" width="300" height="14" class="table-cell"/>
+<text x="134" y="690" class="bom-text">Display Case</text>
+<rect x="430" y="680" width="250" height="14" class="table-cell"/>
+<text x="434" y="690" class="bom-text">1200×600×900mm</text>
+<rect x="25" y="694" width="30" height="14" class="table-cell"/>
+<text x="29" y="704" class="bom-text">3</text>
+<rect x="55" y="694" width="40" height="14" class="table-cell"/>
+<text x="59" y="704" class="bom-text">1</text>
+<rect x="95" y="694" width="35" height="14" class="table-cell"/>
+<text x="99" y="704" class="bom-text">lot</text>
+<rect x="130" y="694" width="300" height="14" class="table-cell"/>
+<text x="134" y="704" class="bom-text">Graphics</text>
+<rect x="430" y="694" width="250" height="14" class="table-cell"/>
+<text x="434" y="704" class="bom-text">Backdrop + Signage</text>
+<text x="25" y="580" class="title">NOTES  備註</text>
+<text x="35" y="594" class="note">1. ALL DIMENSIONS IN MILLIMETERS.  所有尺寸單位為公釐。</text>
+<text x="35" y="607" class="note">2. VENUE: 24m × 12m.  場地 24×12m。</text>
+<text x="35" y="620" class="note">3. CEILING HEIGHT: 8m.  挑高 8m。</text>
+<text x="35" y="633" class="note">4. POWER: 3-PHASE 380V / 100A.  三項電源。</text>
+<rect x="700" y="730" width="460" height="85" fill="#0d1f3c" stroke="#00b4d8" stroke-width="1"/>
+<line x1="700" y1="752" x2="1160" y2="752" stroke="#00b4d8" stroke-width="0.5"/>
+<text x="930.0" y="745" text-anchor="middle" class="title" font-size="10">EXHIBITION FLOOR PLAN</text>
+<text x="720" y="766" class="label">DWG NO.:</text>
+<text x="800" y="766" class="bom-text">EP-001</text>
+<text x="940" y="766" class="label">REV:</text>
+<text x="1020" y="766" class="bom-text">v1</text>
+<text x="720" y="777" class="label">SCALE:</text>
+<text x="800" y="777" class="bom-text">1:100</text>
+<text x="940" y="777" class="label">DATE:</text>
+<text x="1020" y="777" class="bom-text">2026-06-25</text>
+<text x="720" y="788" class="label">CLIENT:</text>
+<text x="800" y="788" class="bom-text">Sample Client</text>
+<text x="940" y="788" class="label">PROJECT:</text>
+<text x="1020" y="788" class="bom-text">Sample Exhibition</text>
+</svg>

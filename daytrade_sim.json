@@ -1,0 +1,118 @@
+{
+  "initial_capital": 400000.0,
+  "cash": 311984.71,
+  "usd_twd_rate": 33.0,
+  "total_realized_pnl": -6659.400000000001,
+  "next_id": 7,
+  "positions": [
+    {
+      "id": 4,
+      "symbol": "AAPL",
+      "shares": 8,
+      "entry_price_usd": 308.1662,
+      "entry_price_twd": 10169.48,
+      "entry_date": "2026-06-08",
+      "entry_time": "21:30:40",
+      "note": "day_probe: buy conf 65%"
+    }
+  ],
+  "trade_history": [
+    {
+      "id": 1,
+      "symbol": "TSLA",
+      "shares": 5,
+      "entry_price_usd": 440.36,
+      "exit_price_usd": 415.88,
+      "entry_price_twd": 14531.88,
+      "exit_price_twd": 13724.04,
+      "pnl_usd": -122.4,
+      "pnl_twd": -4039.2,
+      "pnl_pct": -5.56,
+      "entry_date": "2026-05-28",
+      "exit_date": "2026-06-02",
+      "entry_time": "23:38:15",
+      "exit_time": "09:56:58",
+      "note": "day_probe: buy conf 65% [force closed]"
+    },
+    {
+      "id": 2,
+      "symbol": "META",
+      "shares": 3,
+      "entry_price_usd": 635.26,
+      "exit_price_usd": 600.47,
+      "entry_price_twd": 20963.58,
+      "exit_price_twd": 19815.51,
+      "pnl_usd": -104.37,
+      "pnl_twd": -3444.21,
+      "pnl_pct": -5.48,
+      "entry_date": "2026-05-28",
+      "exit_date": "2026-06-02",
+      "entry_time": "23:38:15",
+      "exit_time": "09:56:58",
+      "note": "day_probe: buy conf 65% [force closed]"
+    },
+    {
+      "id": 3,
+      "symbol": "MSFT",
+      "shares": 3,
+      "entry_price_usd": 426.99,
+      "exit_price_usd": 460.52,
+      "entry_price_twd": 14090.67,
+      "exit_price_twd": 15197.16,
+      "pnl_usd": 100.59,
+      "pnl_twd": 3319.47,
+      "pnl_pct": 7.85,
+      "entry_date": "2026-05-29",
+      "exit_date": "2026-06-02",
+      "entry_time": "21:33:15",
+      "exit_time": "09:56:58",
+      "note": "day_probe: buy conf 65% [force closed]"
+    },
+    {
+      "id": 6,
+      "symbol": "META",
+      "shares": 2,
+      "entry_price_usd": 612.91,
+      "exit_price_usd": 598.4,
+      "entry_price_twd": 20226.03,
+      "exit_price_twd": 19747.2,
+      "pnl_usd": -29.02,
+      "pnl_twd": -957.66,
+      "pnl_pct": -2.37,
+      "entry_date": "2026-07-02",
+      "exit_date": "2026-07-02",
+      "entry_time": "21:30:57",
+      "exit_time": "21:35:54",
+      "note": "day_probe: buy conf 65%"
+    },
+    {
+      "id": 5,
+      "symbol": "TSLA",
+      "shares": 4,
+      "entry_price_usd": 425.3,
+      "exit_price_usd": 413.65,
+      "entry_price_twd": 14034.9,
+      "exit_price_twd": 13650.45,
+      "pnl_usd": -46.6,
+      "pnl_twd": -1537.8,
+      "pnl_pct": -2.74,
+      "entry_date": "2026-07-02",
+      "exit_date": "2026-07-02",
+      "entry_time": "21:30:57",
+      "exit_time": "21:45:53",
+      "note": "day_probe: buy conf 65%"
+    }
+  ],
+  "daily_pnl": {
+    "2026-06-02": {
+      "realized_pnl_twd": -4163.94,
+      "realized_pnl_usd": -126.18,
+      "trades_count": 3
+    },
+    "2026-07-02": {
+      "realized_pnl_twd": -2495.46,
+      "realized_pnl_usd": -75.62,
+      "trades_count": 2
+    }
+  }
+}

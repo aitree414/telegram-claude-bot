@@ -26,10 +26,10 @@ from .polymarket_base import BaseStrategy, StrategyResult, TradeSignal
 logger = logging.getLogger(__name__)
 
 # Minimum arb spread to execute (after gas consideration)
-MIN_PROFIT_PCT = 2.0  # percent (2% = $0.02 per $1.00 pair)
+MIN_PROFIT_PCT = 1.5  # percent (1.5% = $0.015 per $1.00 pair)
 
 # Minimum market volume ($)
-MIN_VOLUME = 10_000
+MIN_VOLUME = 5_000
 
 # Max tokens per pair side
 MAX_PER_SIDE = 200

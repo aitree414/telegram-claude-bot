@@ -119,16 +119,20 @@ class TradeOrchestrator:
 
         try:
             from web3 import Web3
-            from web3.middleware import geth_poa_middleware
 
             web3 = Web3(Web3.HTTPProvider(rpc_url))
 
-            # Add POA middleware for non-ETH chains (not needed in web3.py v7+)
+            # PoA middleware for chains with variable-length extraData
             if chain in [Chain.BSC, Chain.POLYGON, Chain.AVALANCHE]:
                 try:
-                    web3.middleware_onion.inject(geth_poa_middleware, layer=0)
-                except TypeError:
-                    pass  # web3.py v7+ auto-detects PoA chains
+                    from web3.middleware import ExtraDataToPOAMiddleware
+                    web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                except ImportError:
+                    try:
+                        from web3.middleware import geth_poa_middleware
+                        web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                    except ImportError:
+                        pass
 
             if not web3.is_connected():
                 logger.error(f"Failed to connect to {chain} RPC")
@@ -271,16 +275,52 @@ class TradeOrchestrator:
                     gas_strategy=self.orchestrator_config.default_gas_strategy,
                 )
             elif signal_type == SignalType.SELL:
-                # For sell signals, we need an existing trade
-                # TODO: Implement sell execution
-                logger.warning(f"Sell signal {signal_id} received but sell execution not yet implemented")
-                self.database.mark_signal_processed(signal.id)
-                return ProcessingResult(
-                    signal_id=signal_id,
-                    signal_type=signal_type,
-                    success=False,
-                    error="Sell execution not implemented",
+                # Find the active BUY trade for this token to close
+                session = self.database.get_session()
+                try:
+                    active_trade = session.query(Trade).filter(
+                        Trade.token_address == signal.token_address,
+                        Trade.chain == signal.chain,
+                        Trade.trade_type == SignalType.BUY,
+                        Trade.status.in_([TradeStatus.COMPLETED, TradeStatus.PARTIAL]),
+                    ).order_by(Trade.executed_at.desc()).first()
+                finally:
+                    session.close()
+
+                if not active_trade:
+                    logger.warning(
+                        f"Sell signal {signal_id}: no active BUY trade found for "
+                        f"{signal.token_symbol or signal.token_address[:10]} on {signal.chain}"
+                    )
+                    self.database.mark_signal_processed(signal.id)
+                    return ProcessingResult(
+                        signal_id=signal_id,
+                        signal_type=signal_type,
+                        success=False,
+                        error="No active BUY trade to sell",
+                    )
+
+                logger.info(
+                    f"Executing SELL for trade {active_trade.id}: "
+                    f"{active_trade.amount_token:.6f} {active_trade.token_symbol or ''}"
                 )
+                sell_success = await executor.execute_sell(active_trade)
+                self.database.mark_signal_processed(signal.id)
+                if sell_success:
+                    self._processing_stats['successful_trades'] += 1
+                    return ProcessingResult(
+                        signal_id=signal_id,
+                        signal_type=signal_type,
+                        success=True,
+                        trade_id=active_trade.id,
+                    )
+                else:
+                    return ProcessingResult(
+                        signal_id=signal_id,
+                        signal_type=signal_type,
+                        success=False,
+                        error=f"Sell execution failed for trade {active_trade.id}",
+                    )
             else:
                 self.database.mark_signal_processed(signal.id)
                 return ProcessingResult(
@@ -418,14 +458,22 @@ class TradeOrchestrator:
 
             for trade in active_trades:
                 try:
-                    # Get current price (simplified - would use oracle or DEX price)
                     executor = self._get_executor(trade.chain)
                     if not executor:
                         continue
 
-                    # Check for SL/TP triggers
+                    # Fetch actual current price from DEX
+                    current_price = await executor.get_current_price(
+                        trade.token_address,
+                        dex_name=self.orchestrator_config.default_dex,
+                    )
+                    if current_price is None:
+                        # Fall back to stored current_price or entry_price
+                        current_price = trade.current_price or trade.entry_price
+
+                    # Check for SL/TP triggers with real price data
                     triggered = self.risk_manager.check_stop_loss_take_profit(
-                        trade, trade.entry_price  # Would use actual current price
+                        trade, current_price
                     )
 
                     if triggered == 'stop_loss':

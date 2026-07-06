@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>活動設備租用報價單</title>
+<style>
+  @page { margin: 15mm 12mm; }
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Microsoft JhengHei', 'Noto Sans TC', 'Segoe UI', sans-serif;
+    color: #1a1a2e; background: #f5f5f5; padding: 30px 20px;
+  }
+  .page {
+    max-width: 210mm; margin: 0 auto; background: #fff;
+    padding: 40px 45px; box-shadow: 0 2px 20px rgba(0,0,0,.08);
+    border-radius: 4px;
+  }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 3px solid #1a1a2e; }
+  .header-left h1 { font-size: 22px; font-weight: 800; letter-spacing: 1px; color: #1a1a2e; margin-bottom: 4px; }
+  .header-left .sub { font-size: 12px; color: #666; }
+  .header-right { text-align: right; font-size: 12px; color: #555; line-height: 1.7; }
+
+  .quote-title {
+    text-align: center; font-size: 26px; font-weight: 800;
+    letter-spacing: 4px; margin-bottom: 8px; color: #1a1a2e;
+  }
+  .quote-ref {
+    text-align: center; font-size: 13px; color: #888; margin-bottom: 32px;
+  }
+
+  .event-info {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 30px;
+    background: #f8f8fc; padding: 18px 22px; border-radius: 6px;
+    margin-bottom: 30px; font-size: 13px;
+  }
+  .event-info .label { color: #888; }
+  .event-info .value { font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  thead th {
+    background: #1a1a2e; color: #fff; font-size: 12px; font-weight: 600;
+    padding: 10px 12px; text-align: left; letter-spacing: .5px;
+  }
+  thead th:last-child { text-align: right; }
+  tbody td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid #eee; }
+  tbody td:last-child { text-align: right; font-weight: 600; }
+  tbody tr:hover { background: #f8f8fc; }
+  .item-code { color: #999; font-size: 11px; display: block; }
+  .item-note { color: #888; font-size: 11px; display: block; margin-top: 2px; }
+  .subtotal-row td { font-weight: 700; background: #f0f0f5; border-bottom: 2px solid #1a1a2e; }
+  .subtotal-row td:last-child { font-size: 15px; }
+
+  .totals { margin-left: auto; width: 320px; margin-bottom: 30px; }
+  .totals table { margin-bottom: 0; }
+  .totals td { padding: 6px 12px; font-size: 13px; border-bottom: 1px solid #eee; }
+  .totals td:last-child { text-align: right; font-weight: 600; }
+  .totals .grand-total td { font-size: 18px; font-weight: 800; color: #1a1a2e; border-bottom: none; padding-top: 10px; }
+  .totals .grand-total td:last-child { color: #c0392b; font-size: 20px; }
+
+  .terms { margin-top: 24px; padding-top: 20px; border-top: 1px solid #ddd; }
+  .terms h3 { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: #1a1a2e; }
+  .terms p, .terms li { font-size: 11px; color: #666; line-height: 1.8; }
+  .terms ul { padding-left: 18px; }
+
+  .footer { text-align: center; margin-top: 30px; padding-top: 16px; border-top: 1px solid #eee; font-size: 10px; color: #aaa; }
+
+  .stamp {
+    display: inline-block; border: 2px solid #c0392b; color: #c0392b;
+    padding: 4px 16px; font-size: 11px; font-weight: 700; letter-spacing: 2px;
+    border-radius: 2px; margin-left: 10px;
+  }
+  .validity { font-size: 11px; color: #888; margin-top: 4px; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .page { box-shadow: none; padding: 20px 30px; border-radius: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>［ 公司名稱 ］</h1>
+      <div class="sub">活動統籌 · 設備租賃 · 技術支援</div>
+    </div>
+    <div class="header-right">
+      <strong>報價單</strong><br>
+      ｜
+    </div>
+  </div>
+
+  <div class="quote-title">活 動 設 備 租 用 報 價 單</div>
+  <div class="quote-ref">報價編號：Q2026-0601 ｜ 日期：2026年6月1日</div>
+
+  <!-- Event Info -->
+  <div class="event-info">
+    <div><span class="label">活動名稱：</span><span class="value">香港文化中心戶外推廣活動</span></div>
+    <div><span class="label">活動地點：</span><span class="value">香港文化中心露天廣場 A &amp; B</span></div>
+    <div><span class="label">活動日期：</span><span class="value">2026年11月6–8日（天雨改期：11月13–15日）</span></div>
+    <div><span class="label">活動時間：</span><span class="value">中午12時至下午6時</span></div>
+  </div>
+
+  <!-- Items Table -->
+  <table>
+    <thead>
+      <tr><th style="width:48%;">項目</th><th style="width:12%;">數量</th><th style="width:18%;">單價 (HKD)</th><th style="width:22%;">金額 (HKD)</th></tr>
+    </thead>
+    <tbody id="items-body"></tbody>
+  </table>
+
+  <!-- Totals -->
+  <div class="totals">
+    <table>
+      <tr><td>設備租用合計</td><td id="subtotal">—</td></tr>
+      <tr><td>安裝及拆除費用</td><td id="install">—</td></tr>
+      <tr><td>運輸費用</td><td>HK$ 8,000.00</td></tr>
+      <tr class="grand-total"><td>總計 (HKD)</td><td id="grand-total">—</td></tr>
+    </table>
+    <div class="validity">* 以上報價有效期 30 天 &nbsp;|&nbsp; 未含稅</div>
+  </div>
+
+  <!-- Terms -->
+  <div class="terms">
+    <h3>條款及細則</h3>
+    <ul>
+      <li>以上報價未包括政府場地許可證及保險費用。承辦商須自行向康樂及文化事務署申請場地使用許可。</li>
+      <li>RSE（註冊結構工程師）簽署及 WR1 臨時構築物申請文件 <strong>另行報價</strong>，須視乎實際結構設計方案而定。</li>
+      <li>電磁爐供電需現場評估負載，如現場配電箱不足以承載，須另加變壓器或獨立發電機，費用實報實銷。</li>
+      <li>所有搭建工程須符合《建築物條例（第123章）》及《臨時構築物工作守則》相關規定。</li>
+      <li>報價已包括基本安裝及拆除（活動期內），不包括額外租用期間之維護及駐場技術人員超時工作。</li>
+      <li>如遇惡劣天氣（黑色暴雨、八號或以上風球），搭建及拆除時間須順延，相關額外費用另議。</li>
+      <li>付款方式：50% 訂金確認訂單，餘額於活動完成後 30 日內結清。</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    ［ 公司名稱 ］· 香港 · Tel: ｜ WhatsA｜ Email:
+  </div>
+</div>
+
+<script>
+const ITEMS = [
+  { code: "M01", name: "白色天幕（10m × 10m × 3.5m）", note: "防雨帆布、鋁合金支架，含側圍布", qty: 1, price: 18500 },
+  { code: "M02", name: "舞台（9m × 5m × 1m）", note: "鋼製舞台框架、防滑面板、台階", qty: 1, price: 15800 },
+  { code: "M03", name: "Backdrop 背景板（9m × 3m）", note: "桁架結構 + 噴畫裱貼", qty: 1, price: 7800 },
+  { code: "M04", name: "發電機及配電", note: "靜音發電機、配電箱、拉電至天幕，含 6kW 電磁爐供電", qty: 1, price: 12000 },
+  { code: "M05", name: "PA 系統", note: "主動式喇叭 × 4、混音器、無線咪 × 4、DI Box、線材", qty: 1, price: 12800 },
+  { code: "M06", name: "Marquee 帳篷", note: "3m × 3m 白色帳篷，含側圍布", qty: 22, price: 3800 },
+  { code: "M07", name: "H 架 / A 架展示架", note: "H 架 / A 架連展板（0.8m × 1.2m）", qty: 30, price: 350 },
+  { code: "M08", name: "摺枱", note: "1.8m × 0.75m 摺疊式會議枱", qty: 40, price: 180 },
+  { code: "M09", name: "摺櫈", note: "摺疊式鐵椅", qty: 250, price: 45 },
+  { code: "M10", name: "A3 標示牌座", note: "A3 海報框連伸縮腳架", qty: 1, price: 650 },
+  { code: "M11", name: "Stanchion 排隊欄桿", note: "不鏽鋼欄桿連紅色 / 黑色繩帶", qty: 20, price: 280 },
+  { code: "M12", name: "照明系統", note: " portable LED 光管 ， 索吊至帳篷內", qty: 1, price: 6500 },
+  { code: "M13", name: "RSE 註冊結構工程師", note: "臨時構築物結構計算及簽署（另行報價）", qty: 1, price: 0 },
+  { code: "M14", name: "WR1 臨時構築物申請", note: "屋宇署 WR1 表格及相關文件（另行報價）", qty: 1, price: 0 },
+  { code: "S01", name: "駐場技術人員", note: "音響 / 燈光 / 電力技術員，3 天 × 1 人", qty: 3, price: 1500 },
+];
+
+function render() {
+  const body = document.getElementById('items-body');
+  let subtotal = 0;
+
+  ITEMS.forEach(item => {
+    const total = item.qty * item.price;
+    subtotal += total;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        ${item.name}
+        <span class="item-code">${item.code}</span>
+        ${item.note ? '<span class="item-note">' + item.note + '</span>' : ''}
+      </td>
+      <td>${item.qty}</td>
+      <td>${item.price > 0 ? 'HK$ ' + item.price.toLocaleString('zh-HK') : '—'}</td>
+      <td>${item.price > 0 ? 'HK$ ' + total.toLocaleString('zh-HK') : '另行報價'}</td>
+    `;
+    body.appendChild(tr);
+  });
+
+  // Subtotal
+  const equipTotal = subtotal;
+  const installFee = 15000; // installation & dismantle labour
+  const transportFee = 8000;
+  const grandTotal = equipTotal + installFee + transportFee;
+
+  document.getElementById('subtotal').textContent = 'HK$ ' + equipTotal.toLocaleString('zh-HK') + '.00';
+  document.getElementById('install').textContent = 'HK$ ' + installFee.toLocaleString('zh-HK') + '.00';
+  document.getElementById('grand-total').textContent = 'HK$ ' + grandTotal.toLocaleString('zh-HK') + '.00';
+}
+
+render();
+</script>
+</body>
+</html>

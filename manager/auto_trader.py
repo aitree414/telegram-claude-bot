@@ -10,14 +10,22 @@ import logging
 import os
 from datetime import datetime, date
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from analysis.stock_analyzer import analyze_stock
 from analysis.persona_agents import PERSONA_NAMES, RATING_SCORE
+from analysis.persona_tracker import PersonaTracker
+from manager.market_schedule import is_market_open, market_status, next_market_event, detect_market
 from manager.portfolio_risk import PortfolioRiskManager
 from manager.real_trader_bridge import RealTradeBridge
 
 logger = logging.getLogger(__name__)
+
+USD_TWD_RATE = 33.0  # for US stock position sizing
+
+# Hard floor: trades below this confidence are NEVER executed,
+# regardless of env-var configuration. This is a safety rail.
+HARD_CONFIDENCE_FLOOR = 0.55
 
 
 class AutoTraderConfig:
@@ -81,11 +89,14 @@ class AutoTrader:
     """
 
     def __init__(self, sim_portfolio=None, risk_manager: Optional[PortfolioRiskManager] = None,
-                 real_trade_bridge: Optional[RealTradeBridge] = None):
+                 real_trade_bridge: Optional[RealTradeBridge] = None,
+                 broker: Optional[Any] = None):
         self.config = AutoTraderConfig()
         self.sim_portfolio = sim_portfolio
         self.risk_manager = risk_manager or PortfolioRiskManager()
         self.real_trade_bridge = real_trade_bridge or RealTradeBridge()
+        self.broker = broker  # Optional SinoBridge for realistic execution
+        self.persona_tracker = PersonaTracker()
         self._state_file = Path(__file__).parent.parent / "data" / "auto_trader_state.json"
         self._state = self._load_state()
 
@@ -187,11 +198,42 @@ class AutoTrader:
             logger.info("Daily trade limit reached, skipping cycle")
             return []
 
-        from bot.stock import _scan_single
+        # ── Drawdown check: halt trading if drawdown is too severe ──
+        portfolio_val = self._estimate_portfolio_value()
+        self.risk_manager.update_peak(portfolio_val)
+        should_halt, halt_reason = self.risk_manager.should_force_stop(portfolio_val)
+        if should_halt:
+            logger.warning("Auto-trader halted: %s", halt_reason)
+            return [{"symbol": "PORTFOLIO", "action": "HALTED", "reason": halt_reason}]
+
+        from bot.stock import _scan_single, get_current_price
+
+        # ── Market hours filtering ──────────────────────────────────
+        now = datetime.now()
+        open_symbols = [s for s in symbols if is_market_open(s, now)]
+        pre_market_symbols: list[str] = []
+        closed_symbols: list[str] = []
+
+        for s in symbols:
+            if s in open_symbols:
+                continue
+            mkt = detect_market(s)
+            evt = next_market_event(mkt, now)
+            if evt["type"] == "open" and evt["minutes_until"] is not None and 0 < evt["minutes_until"] <= 30:
+                pre_market_symbols.append(s)
+            else:
+                closed_symbols.append(s)
+
+        if closed_symbols:
+            logger.info(f"Market closed for {len(closed_symbols)} symbol(s): {closed_symbols}")
+        if pre_market_symbols:
+            logger.info(f"Pre-market analysis for {len(pre_market_symbols)} symbol(s): {pre_market_symbols}")
+        # ─────────────────────────────────────────────────────────────
 
         actions = []
 
-        for symbol in symbols:
+        # 1) Full analysis + trading for open-market symbols
+        for symbol in open_symbols:
             if self._state["trades_today"] >= self.config.max_trades_per_day:
                 break
 
@@ -199,7 +241,7 @@ class AutoTrader:
             if not data:
                 continue
 
-            result = analyze_stock(data)
+            result = analyze_stock(data, tracker=self.persona_tracker)
             consensus = result["consensus_rating"]
             confidence = result["confidence"]
             score = result["consensus_score"]
@@ -209,23 +251,45 @@ class AutoTrader:
                 continue
 
             # ---- BUY logic ----
+            # Apply hard floor: belt-and-suspenders, cannot be overridden by env
+            effective_min_conf = max(self.config.min_confidence, HARD_CONFIDENCE_FLOOR)
             if (consensus == "BUY"
                     and score >= self.config.buy_threshold
-                    and confidence >= self.config.min_confidence):
+                    and confidence >= effective_min_conf):
 
                 # Risk check
                 current_value = self._estimate_portfolio_value()
                 position_value = current_value * (self.config.max_position_pct / 100)
-                shares = max(1, int(position_value / current))
+                # Cap by available cash (source: sim_portfolio in simulation mode)
+                broker_sim = self.broker and getattr(self.broker, 'simulation', True)
+                if self.sim_portfolio:
+                    available_cash = self.sim_portfolio.get_cash()
+                elif self.broker and not broker_sim:
+                    if self._is_us_stock(symbol):
+                        available_cash = self.broker.usd_cash * USD_TWD_RATE
+                    else:
+                        available_cash = self.broker.cash
+                else:
+                    available_cash = position_value
+                position_value = min(position_value, max(available_cash, 0))
+                # Convert US stock price from USD to TWD for position sizing
+                trade_price = current * USD_TWD_RATE if self._is_us_stock(symbol) else current
+                shares = max(1, int(position_value / trade_price))
+                if shares == 0 or position_value <= 0:
+                    logger.info(f"Auto-trade BUY {symbol} skipped: insufficient cash")
+                    continue
 
                 # Build current positions from sim portfolio for risk check
                 positions = self.sim_portfolio.list_holdings() if self.sim_portfolio else []
-                current_positions = [
-                    {"symbol": h["symbol"],
-                     "value": h["avg_cost"] * h["net_shares"],
-                     "sector": ""}
-                    for h in positions
-                ]
+                current_positions = []
+                for h in positions:
+                    # Use current price for position value, fall back to avg_cost
+                    pos_price = get_current_price(h["symbol"]) or h["avg_cost"]
+                    current_positions.append({
+                        "symbol": h["symbol"],
+                        "value": pos_price * h["net_shares"],
+                        "sector": "",
+                    })
                 allowed, reason = self.risk_manager.validate_new_position(
                     symbol, position_value, current_value, current_positions
                 )
@@ -234,13 +298,44 @@ class AutoTrader:
                     actions.append({"symbol": symbol, "action": "BLOCKED", "reason": reason})
                     continue
 
-                # Execute sim trade
+                # Execute trade (via broker if available, else sim portfolio)
+                broker_result = None
+                trade_ok = False
+                portfolio_price = current * USD_TWD_RATE if self._is_us_stock(symbol) else current
+
+                # Check portfolio buying power before executing
                 if self.sim_portfolio:
-                    note = f"auto: {result['consensus_score']:.2f} conf {confidence:.0%}"
-                    tid = self.sim_portfolio.buy(symbol, shares, current, note)
+                    trade_cost = shares * trade_price
+                    port_bp = self.sim_portfolio.get_buying_power()
+                    if trade_cost > port_bp + 1:
+                        logger.info(f"Auto-trade BUY {symbol} skipped: trade_cost {trade_cost:.0f} > bp {port_bp:.0f}")
+                        continue
+
+                broker_sim = self.broker and getattr(self.broker, 'simulation', True)
+                if self.broker and not broker_sim:
+                    # Real Shioaji mode: execute via broker
+                    broker_result = self.broker.buy(symbol, shares, current)
+                    trade_ok = broker_result.success
+                    if trade_ok and self.sim_portfolio:
+                        note = f"auto: {result['consensus_score']:.2f} conf {confidence:.0%}"
+                        self.sim_portfolio.buy(symbol, shares, portfolio_price, note,
+                            auto_sl_pct=15, auto_tp_pct=30)
+                elif self.sim_portfolio:
+                    # Simulation mode: portfolio_sim is the single source of truth
+                    port_tid = self.sim_portfolio.buy(
+                        symbol, shares, portfolio_price,
+                        f"auto: {result['consensus_score']:.2f} conf {confidence:.0%}",
+                        auto_sl_pct=15, auto_tp_pct=30,
+                    )
+                    trade_ok = port_tid > 0
+
+                if trade_ok:
                     self._state["trades_today"] += 1
                     self.risk_manager.record_trade(is_stock=True)
-                    logger.info(f"🤖 Auto-BUY {symbol} x{shares} @ {current}  (trade #{tid})")
+                    fee_str = ""
+                    if not broker_sim and broker_result:
+                        fee_str = f" (fee NT${broker_result.fee:.0f})"
+                    logger.info(f"🤖 Auto-BUY {symbol} x{shares} @ {current}{fee_str}")
                     actions.append({
                         "symbol": symbol,
                         "action": "BUY",
@@ -249,6 +344,7 @@ class AutoTrader:
                         "confidence": confidence,
                         "score": score,
                         "reason": result["ratings"],
+                        "fee": broker_result.fee if broker_result else 0,
                     })
 
                     # Real on-chain BUY
@@ -277,26 +373,52 @@ class AutoTrader:
             # ---- SELL logic ----
             elif (consensus == "SELL"
                   and score <= self.config.sell_threshold
-                  and confidence >= self.config.min_confidence
-                  and self.sim_portfolio):
+                  and confidence >= effective_min_conf):
 
-                holdings = self.sim_portfolio.list_holdings()
-                holding = next((h for h in holdings if h["symbol"] == symbol), None)
-                if holding and holding["net_shares"] > 0:
-                    sell_result = self.sim_portfolio.sell(symbol, holding["net_shares"], current)
-                    if sell_result["ok"]:
+                # Check holdings — sim_portfolio is source of truth in simulation mode
+                sell_shares = 0
+                broker_sim = self.broker and getattr(self.broker, 'simulation', True)
+                if self.sim_portfolio:
+                    holdings = self.sim_portfolio.list_holdings()
+                    holding = next((h for h in holdings if h["symbol"] == symbol), None)
+                    if holding:
+                        sell_shares = holding["net_shares"]
+                elif self.broker and not broker_sim:
+                    pos = self.broker.get_position(symbol)
+                    if pos:
+                        sell_shares = pos.shares
+
+                if sell_shares > 0:
+                    profit = 0.0
+                    portfolio_price = current * USD_TWD_RATE if self._is_us_stock(symbol) else current
+                    if self.broker and not broker_sim:
+                        # Real Shioaji mode: execute via broker
+                        br = self.broker.sell(symbol, sell_shares, current)
+                        if br.success and self.sim_portfolio:
+                            sp = self.sim_portfolio.sell(symbol, sell_shares, portfolio_price)
+                            profit = sp.get("realized_pnl", 0)
+                    elif self.sim_portfolio:
+                        # Simulation mode: portfolio_sim is single source of truth
+                        sp = self.sim_portfolio.sell(symbol, sell_shares, portfolio_price)
+                        profit = sp.get("realized_pnl", 0)
+                        br_result_ok = sp.get("ok", False)
+                    else:
+                        br_result_ok = False
+
+                    br_not_needed = broker_sim or not self.broker
+                    if br_not_needed or (self.broker and br.success):
                         self._state["trades_today"] += 1
                         self.risk_manager.record_trade(is_stock=True)
                         logger.info(
-                            f"🤖 Auto-SELL {symbol} x{holding['net_shares']} @ {current} "
-                            f"pnl {sell_result['realized_pnl']:.2f}"
+                            f"🤖 Auto-SELL {symbol} x{sell_shares} @ {current} "
+                            f"pnl {profit:.2f}"
                         )
                         actions.append({
                             "symbol": symbol,
                             "action": "SELL",
-                            "shares": holding["net_shares"],
+                            "shares": sell_shares,
                             "price": current,
-                            "pnl": sell_result["realized_pnl"],
+                            "pnl": profit,
                             "confidence": confidence,
                             "score": score,
                         })
@@ -317,6 +439,14 @@ class AutoTrader:
                                     f"Real SELL {symbol} failed: {real_result.get('error')}"
                                 )
 
+        # 2) Pre-market: analysis only (no trading)
+        for symbol in pre_market_symbols:
+            data = _scan_single(symbol)
+            if not data:
+                continue
+            analyze_stock(data, tracker=self.persona_tracker)
+            logger.info(f"Pre-market analysis for {symbol} (market opens within 30min)")
+
         self._state["last_scan"] = datetime.now().isoformat()
         if actions:
             self._state["history"].append({
@@ -329,16 +459,29 @@ class AutoTrader:
 
         return actions
 
+    @staticmethod
+    def _is_us_stock(symbol: str) -> bool:
+        """Detect if symbol is a US stock (not a numeric Taiwan code)."""
+        clean = symbol.strip().upper()
+        if clean.endswith(".TW") or clean.endswith(".TWO"):
+            return False
+        raw = clean.replace(".TW", "").replace(".TWO", "")
+        return not raw.isdigit()
+
     def _estimate_portfolio_value(self) -> float:
-        """Rough estimate of portfolio value from sim holdings."""
+        """Full portfolio value including cash reserves and unrealized P&L."""
+        broker_sim = self.broker and getattr(self.broker, 'simulation', True)
+        if self.broker and not broker_sim:
+            return self.broker.portfolio_value
         if not self.sim_portfolio:
             return 100000.0
         from bot.stock import get_current_price
-        total = 0.0
+        total_holdings = 0.0
         for h in self.sim_portfolio.list_holdings():
             price = get_current_price(h["symbol"]) or h["avg_cost"]
-            total += price * h["net_shares"]
-        return max(total, 10000.0)
+            total_holdings += price * h["net_shares"]
+        cash = self.sim_portfolio.get_cash()
+        return max(cash + total_holdings, 10000.0)
 
     # ------------------------------------------------------------------
     # Reporting

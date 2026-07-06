@@ -28,8 +28,17 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
+from dotenv import load_dotenv
 from eth_account.messages import encode_defunct, encode_typed_data
 from web3 import Web3
+from web3.middleware import ExtraDataToPOAMiddleware
+from py_clob_client_v2.signer import Signer
+from py_clob_client_v2.order_builder.builder import OrderBuilder as V2OrderBuilder
+from py_clob_client_v2.clob_types import OrderArgsV2, CreateOrderOptions
+from py_clob_client_v2.order_utils.model.order_data_v2 import order_to_json_v2
+from py_clob_client_v2.order_utils.model.signature_type_v2 import SignatureTypeV2
+
+_load_env = load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +53,7 @@ _DNS_OVERRIDE: dict[str, str] = {}
 
 
 def _patch_dns() -> None:
-    for domain in ("clob.polymarket.com", "gamma-api.polymarket.com"):
+    for domain in ("clob.polymarket.com", "gamma-api.polymarket.com", "data-api.polymarket.com"):
         try:
             out = subprocess.check_output(
                 ["nslookup", domain, "1.1.1.1"],
@@ -164,20 +173,36 @@ class PolymarketCLOB:
             proxy=proxy or None,
         )
         self._w3 = Web3(Web3.HTTPProvider(POLYGON_RPC, request_kwargs={"timeout": 10}))
+        self._w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
         # Wallet
         pk = private_key or os.environ.get("POLYMARKET_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY")
         if pk:
             self._account = self._w3.eth.account.from_key(pk)
             self.wallet_address = self._account.address
+            self._private_key_str = pk
+            self._v2_signer = Signer(pk, CHAIN_ID)
+            # Compute proxy wallet address via Exchange V2 (for reference)
+            self._proxy_wallet = self._get_proxy_wallet(self.wallet_address)
+            # Using EOA signature type — proxy wallet is stuck (owner=address(0))
+            self._v2_builder = V2OrderBuilder(
+                self._v2_signer,
+                signature_type=SignatureTypeV2.EOA,
+                funder=self.wallet_address,
+            )
         else:
             self._account = None
             self.wallet_address = None
+            self._private_key_str = None
+            self._v2_signer = None
+            self._v2_builder = None
 
         # API credentials (L2 auth)
         self._api_key = api_key or os.environ.get("POLYMARKET_API_KEY") or ""
         self._api_secret = os.environ.get("POLYMARKET_API_SECRET") or ""
-        self._api_passphrase = os.environ.get("POLYMARKET_PASSPHRASE") or ""
+        self._api_passphrase = (os.environ.get("POLYMARKET_PASSPHRASE")
+                                or os.environ.get("POLYMARKET_API_PASSPHRASE")
+                                or "")
         self._api_key_ts: int = 0  # timestamp used when deriving key
 
         if self._api_key and self._api_secret and self._api_passphrase:
@@ -190,16 +215,15 @@ class PolymarketCLOB:
     # ── Auth ──────────────────────────────────
 
     @staticmethod
-    def _l2_signature(secret: str, method: str, path: str, timestamp: str) -> str:
+    def _l2_signature(secret: str, method: str, path: str, timestamp: str, body: str = "") -> str:
         """HMAC-SHA256 signature for L2 authenticated requests.
 
-        The secret is URL-safe base64.  The signature output is also
-        URL-safe base64 (``+`` → ``-``, ``/`` → ``_``).
+        Delegates to the V2 library's build_hmac_signature for correctness.
+        The body must have single quotes replaced with double quotes to match
+        the canonical API signing format (only matters when body is a string).
         """
-        message = timestamp + method + path
-        raw_secret = base64.urlsafe_b64decode(secret)
-        sig = hmac.new(raw_secret, message.encode(), hashlib.sha256).digest()
-        return base64.b64encode(sig).decode().replace("+", "-").replace("/", "_")
+        from py_clob_client_v2.signing.hmac import build_hmac_signature
+        return build_hmac_signature(secret, timestamp, method, path, body)
 
     def _set_auth_headers(self) -> None:
         """Attach L2 auth headers to the httpx client via event hook.
@@ -214,10 +238,21 @@ class PolymarketCLOB:
         self._http._event_hooks["request"] = []
 
         def _l2_auth_hook(request: httpx.Request) -> None:
+            # Skip if caller already provided explicit auth headers
+            if "POLY_SIGNATURE" in request.headers:
+                return
             ts = str(int(time.time()))  # seconds (JS: Math.floor(Date.now()/1000))
             path = request.url.path
             method = request.method.upper()
-            sig = self._l2_signature(self._api_secret, method, path, ts)
+            # Polymarket V2 requires body in signature for POST/PUT
+            body = ""
+            if request.content and method in ("POST", "PUT"):
+                body_bytes = request.content
+                if isinstance(body_bytes, bytes):
+                    body = body_bytes.decode("utf-8", errors="replace")
+                else:
+                    body = str(body_bytes)
+            sig = self._l2_signature(self._api_secret, method, path, ts, body)
             request.headers["POLY_ADDRESS"] = self.wallet_address or ""
             request.headers["POLY_SIGNATURE"] = sig
             request.headers["POLY_TIMESTAMP"] = ts
@@ -267,9 +302,10 @@ class PolymarketCLOB:
 
         self._api_key_ts = int(ts)
 
+        # CLOB requires 0x prefix on the signature hex
         headers = {
             "POLY_ADDRESS": self.wallet_address,
-            "POLY_SIGNATURE": sig_hex,  # already includes 0x prefix
+            "POLY_SIGNATURE": "0x" + sig_hex,
             "POLY_TIMESTAMP": ts,
             "POLY_NONCE": str(nonce),
         }
@@ -436,122 +472,73 @@ class PolymarketCLOB:
 
         return Orderbook(token_id=token_id, bids=bids, asks=asks)
 
+    # ── Internal helpers ──────────────────────
+
+    def _get_proxy_wallet(self, user_address: str) -> str:
+        """Compute proxy wallet address from Exchange V2."""
+        try:
+            ex_abi = json.loads('[{"inputs":[{"name":"_addr","type":"address"}],"name":"getProxyWalletAddress","outputs":[{"name":"","type":"address"}],"stateMutability":"view","type":"function"}]')
+            ex = self._w3.eth.contract(address=Web3.to_checksum_address("0xE111180000d2663C0091e4f400237545B87B996B"), abi=ex_abi)
+            proxy = ex.functions.getProxyWalletAddress(Web3.to_checksum_address(user_address)).call()
+            logger.info("Proxy wallet: %s", proxy)
+            return proxy
+        except Exception as e:
+            logger.warning("Failed to get proxy wallet, using main wallet: %s", e)
+            return user_address
+
+    def _get_tick_size(self, token_id: str) -> str:
+        """Fetch tick size via CLOB API."""
+        try:
+            resp = self._http.get("/tick-size", params={"token_id": token_id})
+            resp.raise_for_status()
+            ts = resp.json().get("minimum_tick_size", 0.01)
+            return str(ts)
+        except Exception:
+            return "0.01"
+
+    def _get_neg_risk(self, token_id: str) -> bool:
+        """Check if token is neg-risk."""
+        try:
+            resp = self._http.get("/neg-risk", params={"token_id": token_id})
+            resp.raise_for_status()
+            return resp.json().get("neg_risk", False)
+        except Exception:
+            return False
+
     # ── Order placement ───────────────────────
 
     def _build_order_payload(self, token_id: str, side: str,
-                             price: float, size: float,
-                             expiration_sec: int = 300) -> Optional[dict]:
-        """Build and EIP-712 sign a CLOB limit order.
-
-        Polymarket uses a specific typed-data schema:
-
-        Domain:
-          name: "Polymarket CLOB"
-          version: "1"
-          chainId: 137
-
-        Types.Order:
-          salt (uint256)
-          maker (address)
-          signer (address)
-          taker (address) — zero address for non-filled
-          tokenId (uint256)
-          makerAmount (uint256)
-          takerAmount (uint256)
-          expiration (uint64)
-          nonce (uint256)
-          feeRateBps (uint16)
-          side (bool) — false=BUY, true=SELL
-          signatureType (uint8) — 0=EIP712
-        """
-        if not self._account:
+                             price: float, size: float) -> Optional[dict]:
+        """Build and EIP-712 sign a V2 CLOB limit order via py_clob_client_v2."""
+        if not self._v2_builder:
             logger.error("Cannot place order: no wallet configured")
             return None
         self._ensure_auth()
 
-        nonce = int(time.time() * 1000)
-        expiration = nonce + (expiration_sec * 1000)
-        salt = nonce
+        tick_size = self._get_tick_size(token_id)
+        neg_risk = self._get_neg_risk(token_id)
 
-        # Maker = the party placing the order
-        # For BUY: maker pays takerAmount USDC, receives makerAmount tokens
-        # For SELL: maker sends makerAmount tokens, receives takerAmount USDC
-        is_sell = side.upper() == "SELL"
-        decimals = 10 ** 6  # USDC has 6 decimals, outcome tokens have 6
-
-        if is_sell:
-            maker_amount = int(size * decimals)
-            taker_amount = int(size * price * decimals)
-        else:
-            maker_amount = int(size * price * decimals)
-            taker_amount = int(size * decimals)
-
-        domain = {
-            "name": "Polymarket CLOB",
-            "version": "1",
-            "chainId": CHAIN_ID,
-        }
-
-        types = {
-            "Order": [
-                {"name": "salt", "type": "uint256"},
-                {"name": "maker", "type": "address"},
-                {"name": "signer", "type": "address"},
-                {"name": "taker", "type": "address"},
-                {"name": "tokenId", "type": "uint256"},
-                {"name": "makerAmount", "type": "uint256"},
-                {"name": "takerAmount", "type": "uint256"},
-                {"name": "expiration", "type": "uint64"},
-                {"name": "nonce", "type": "uint256"},
-                {"name": "feeRateBps", "type": "uint16"},
-                {"name": "side", "type": "bool"},
-                {"name": "signatureType", "type": "uint8"},
-            ]
-        }
-
-        values = {
-            "salt": salt,
-            "maker": self.wallet_address,
-            "signer": self.wallet_address,
-            "taker": "0x0000000000000000000000000000000000000000",
-            "tokenId": int(token_id),
-            "makerAmount": maker_amount,
-            "takerAmount": taker_amount,
-            "expiration": expiration,
-            "nonce": nonce,
-            "feeRateBps": 0,
-            "side": is_sell,
-            "signatureType": 0,
-        }
+        order_args = OrderArgsV2(
+            token_id=token_id,
+            price=price,
+            size=size,
+            side="BUY" if side.upper() == "BUY" else "SELL",
+        )
+        options = CreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
 
         try:
-            signable = encode_typed_data(domain, types, values)
-            signed = self._account.sign_message(signable)
-            signature = signed.signature.hex()
+            signed_order = self._v2_builder.build_order(
+                order_args, options, version=2
+            )
         except Exception as e:
-            logger.error(f"EIP-712 signing failed: {e}")
+            logger.error("V2 order build failed: %s", e)
             return None
 
-        return {
-            "tokenID": str(token_id),
-            "price": str(price),
-            "size": str(size),
-            "side": side.upper(),
-            "signature": signature,  # already includes 0x prefix
-            "salt": str(salt),
-            "maker": self.wallet_address,
-            "signer": self.wallet_address,
-            "taker": "0x0000000000000000000000000000000000000000",
-            "expiration": str(expiration),
-            "nonce": str(nonce),
-            "feeRateBps": "0",
-            "signatureType": "0",
-        }
+        return order_to_json_v2(signed_order, self._api_key, "GTC")
 
     def place_order(self, token_id: str, side: str,
-                    price: float, size: float,
-                    gasless: bool = True) -> Optional[dict]:
-        """Place a limit order on the CLOB.
+                    price: float, size: float) -> Optional[dict]:
+        """Place a V2 limit order on the CLOB.
 
         Parameters
         ----------
@@ -559,7 +546,6 @@ class PolymarketCLOB:
         side : str        — "BUY" or "SELL"
         price : float     — limit price in USDC (0.00 – 1.00)
         size : float      — number of outcome tokens
-        gasless : bool    — use the gasless relay (no gas cost for taker)
 
         Returns
         -------
@@ -569,9 +555,29 @@ class PolymarketCLOB:
         if not payload:
             return None
 
-        endpoint = "/order/gasless" if gasless else "/order"
+        # Pre-serialize with compact JSON for deterministic HMAC body signing
+        serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+
+        # Compute L2 auth headers directly (bypass event hook to ensure correct HMAC)
+        from py_clob_client_v2.signing.hmac import build_hmac_signature
+        ts = str(int(time.time()))
+        sig = build_hmac_signature(self._api_secret, ts, "POST", "/order", serialized)
+        auth_headers = {
+            "Content-Type": "application/json",
+            "POLY_ADDRESS": self.wallet_address or "",
+            "POLY_SIGNATURE": sig,
+            "POLY_TIMESTAMP": ts,
+            "POLY_API_KEY": self._api_key,
+            "POLY_PASSPHRASE": self._api_passphrase or "",
+        }
+        logger.debug("POST /order sig=%s body=%s", sig[:20], serialized[:100])
         try:
-            resp = self._http.post(endpoint, json=payload)
+            sig_type = int(self._v2_builder.signature_type) if self._v2_builder else 2
+            resp = self._http.post(
+                f"/order?signature_type={sig_type}",
+                content=serialized,
+                headers=auth_headers,
+            )
             resp.raise_for_status()
             result = resp.json()
             logger.info(
@@ -655,6 +661,34 @@ class PolymarketCLOB:
         except Exception as e:
             logger.warning(f"Orders fetch failed: {e}")
             return []
+
+    # ── Balance ──────────────────────────────
+
+    def get_balance(self, asset_type: str = "COLLATERAL") -> str:
+        """Query CLOB balance for the proxy wallet (L2-authenticated)."""
+        self._ensure_auth()
+        try:
+            sig_type = int(self._v2_builder.signature_type) if self._v2_builder else 2
+            resp = self._http.get("/balance-allowance",
+                params={"signature_type": str(sig_type), "asset_type": asset_type})
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("balance", "0")
+        except Exception as e:
+            logger.warning("Balance fetch failed: %s", e)
+            return "0"
+
+    def update_balance(self, asset_type: str = "COLLATERAL") -> bool:
+        """Trigger CLOB to re-scan on-chain balance (L2-authenticated)."""
+        self._ensure_auth()
+        try:
+            sig_type = int(self._v2_builder.signature_type) if self._v2_builder else 2
+            resp = self._http.get("/balance-allowance/update",
+                params={"signature_type": str(sig_type), "asset_type": asset_type})
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning("Balance update failed: %s", e)
+            return False
 
     # ── Gamma market scan ─────────────────────
 
