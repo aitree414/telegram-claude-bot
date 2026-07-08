@@ -106,3 +106,5 @@ fixed_*.py
 .dream/
 .mcp.json
 .env.txt
+node_modules/
+.env.example

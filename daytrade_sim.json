@@ -1,9 +1,9 @@
 {
   "initial_capital": 400000.0,
-  "cash": 311984.71,
+  "cash": 207211.03000000003,
   "usd_twd_rate": 33.0,
   "total_realized_pnl": -6659.400000000001,
-  "next_id": 7,
+  "next_id": 9,
   "positions": [
     {
       "id": 4,
@@ -13,6 +13,26 @@
       "entry_price_twd": 10169.48,
       "entry_date": "2026-06-08",
       "entry_time": "21:30:40",
+      "note": "day_probe: buy conf 65%"
+    },
+    {
+      "id": 7,
+      "symbol": "AMZN",
+      "shares": 7,
+      "entry_price_usd": 244.16,
+      "entry_price_twd": 8057.28,
+      "entry_date": "2026-07-07",
+      "entry_time": "21:30:57",
+      "note": "day_probe: buy conf 65%"
+    },
+    {
+      "id": 8,
+      "symbol": "GOOGL",
+      "shares": 4,
+      "entry_price_usd": 366.46,
+      "entry_price_twd": 12093.18,
+      "entry_date": "2026-07-07",
+      "entry_time": "21:30:57",
       "note": "day_probe: buy conf 65%"
     }
   ],

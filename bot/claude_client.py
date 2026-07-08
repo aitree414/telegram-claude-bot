@@ -170,15 +170,27 @@ class ClaudeClient:
             )
         )
 
+        # Detect DeepSeek models to enable thinking/reasoning optimizations
+        model = constants.API_MODEL
+        is_deepseek = "deepseek" in model.lower()
+
+        # Build API kwargs
+        api_kwargs = dict(
+            model=model,
+            max_tokens=max_tokens,
+            messages=messages,
+        )
+        if tools:
+            api_kwargs["tools"] = tools
+
+        # Enable DeepSeek thinking mode (chain-of-thought reasoning)
+        if is_deepseek:
+            api_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+
         # Define the API call function
         @retry_decorator
         def _api_call():
-            return self._client.chat.completions.create(
-                model=constants.API_MODEL,
-                max_tokens=max_tokens,
-                tools=tools,
-                messages=messages,
-            )
+            return self._client.chat.completions.create(**api_kwargs)
 
         # Execute with retry
         try:
@@ -409,7 +421,7 @@ class ClaudeClient:
         Falls back to error message if the configured model doesn't support vision.
         """
         vision_model = constants.VISION_MODEL
-        supports_vision = "gpt-4o" in vision_model or "gpt-4-turbo" in vision_model
+        supports_vision = "gpt-4o" in vision_model or "gpt-4-turbo" in vision_model or "deepseek" in vision_model
 
         if not supports_vision:
             reply = (

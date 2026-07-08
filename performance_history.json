@@ -611,6 +611,42 @@
       "total_pnl": -376616.01,
       "pnl_pct": -57.94,
       "mdd": 38.7
+    },
+    {
+      "date": "2026-07-06",
+      "initial_capital": 650000.0,
+      "equity": 273099.49,
+      "cash": 13475.92,
+      "holdings_value": 259623.57,
+      "realized_pnl": -61537.12,
+      "futures_upnl": 0,
+      "total_pnl": -376900.51,
+      "pnl_pct": -57.98,
+      "mdd": 38.76
+    },
+    {
+      "date": "2026-07-07",
+      "initial_capital": 650000.0,
+      "equity": 267751.08,
+      "cash": 13475.92,
+      "holdings_value": 254275.16,
+      "realized_pnl": -61537.12,
+      "futures_upnl": 0,
+      "total_pnl": -382248.92,
+      "pnl_pct": -58.81,
+      "mdd": 39.96
+    },
+    {
+      "date": "2026-07-08",
+      "initial_capital": 650000.0,
+      "equity": 262094.18,
+      "cash": 13475.92,
+      "holdings_value": 248618.26,
+      "realized_pnl": -61537.12,
+      "futures_upnl": 0,
+      "total_pnl": -387905.82,
+      "pnl_pct": -59.68,
+      "mdd": 41.23
     }
   ]
 }

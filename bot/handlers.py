@@ -1027,91 +1027,13 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text("對話記憶已清除！")
 
 
-def _preprocess_file_request(text: str) -> str:
-    """Detect file/directory/web access requests and pre-execute them.
-
-    If the user's message contains a file read, directory listing, or web fetch
-    request, execute the tool directly and prepend the result so GPT can
-    analyze it without having to call functions itself.
-
-    Returns the (possibly augmented) message text.
-    """
-    import re
-    from .tools import read_file, list_directory, fetch_webpage
-
-    text_stripped = text.strip()
-
-    # Pattern 1: "讀取 /some/path" or "讀 /some/path" or "看 /some/path"
-    m = re.match(r'^(?:讀取|讀|看|打開|開啟|分析)\s+(/\S+(?:/\S*)*)\s*$', text_stripped)
-    if m:
-        path = m.group(1)
-        result = read_file(path)
-        if not result.startswith("拒絕存取") and not result.startswith("找不到") and not result.startswith("讀取錯誤"):
-            return f"已讀取檔案 {path}，內容如下：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
-        return f"請讀取檔案 {path}，但工具回傳：{result}"
-
-    # Pattern 2: "列出 /some/path" or "看 /some/path 目錄" or "/some/path 有什麼"
-    m = re.match(r'^(?:列出|看|顯示)\s+(/\S+(?:/\S*)*)\s*(?:目錄|資料夾)?\s*$', text_stripped)
-    if m:
-        path = m.group(1)
-        result = list_directory(path)
-        return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
-
-    # Pattern 3: "/path 有什麼" or "/path 目錄"
-    m = re.match(r'^(/\S+(?:/\S*)*)\s*(?:有什麼|目錄|資料夾|裡面有什麼)\s*$', text_stripped)
-    if m:
-        path = m.group(1)
-        result = list_directory(path)
-        return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
-
-    # Pattern 4: "這個檔案 /path" or "檔案 /path"
-    m = re.match(r'^(?:這個)?(?:檔案|文件)\s+(/\S+(?:/\S*)*)\s*$', text_stripped)
-    if m:
-        path = m.group(1)
-        result = read_file(path)
-        if not result.startswith("拒絕存取") and not result.startswith("找不到"):
-            return f"已讀取檔案 {path}，內容如下：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
-        return f"請讀取檔案 {path}，但工具回傳：{result}"
-
-    # Pattern 5: "這個目錄 /path" or "目錄 /path"
-    m = re.match(r'^(?:這個)?(?:目錄|資料夾)\s+(/\S+(?:/\S*)*)\s*$', text_stripped)
-    if m:
-        path = m.group(1)
-        result = list_directory(path)
-        return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
-
-    # Pattern 6: Absolute path starting with / — treat as file read
-    if text_stripped.startswith("/") and not text_stripped.startswith("//"):
-        # Must look like a file path (contain no spaces, or be a single path)
-        if " " not in text_stripped and not text_stripped.startswith("/help"):
-            path = text_stripped
-            if path.endswith("/"):
-                # Looks like a directory
-                result = list_directory(path)
-                return f"目錄 {path} 的內容：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
-            else:
-                result = read_file(path)
-                if not result.startswith("拒絕存取") and not result.startswith("找不到"):
-                    return f"已讀取檔案 {path}，內容如下：\n\n{result}\n\n請根據以上內容回答用戶的問題。"
-
-    return text
-
-
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     claude: ClaudeClient = context.bot_data["claude"]
     await update.message.chat.send_action("typing")
 
-    # Pre-process: intercept file/dir/web requests and execute directly
-    augmented_text = _preprocess_file_request(update.message.text)
-    needs_reply = augmented_text != update.message.text
-
     try:
         # Use auto session for all text messages
-        reply, session_id = claude.chat_with_auto_session(update.effective_user.id, augmented_text)
-
-        if needs_reply and reply:
-            # The pre-processor fetched the data, GPT just needs to analyze it
-            pass
+        reply, session_id = claude.chat_with_auto_session(update.effective_user.id, update.message.text)
 
         await update.message.reply_text(reply)
 
