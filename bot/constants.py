@@ -7,8 +7,8 @@ across different parts of the application.
 import os
 
 # Model configuration (override via OPENAI_MODEL env var)
-# DeepSeek models: deepseek-v4-pro or deepseek-v4-flash
-API_MODEL = os.environ.get("OPENAI_MODEL", "deepseek-v4-pro")
+# DeepSeek models: deepseek-v4-pro[1m] (1M context) or deepseek-v4-flash
+API_MODEL = os.environ.get("OPENAI_MODEL", "deepseek-v4-pro[1m]")
 
 # Vision-capable model for image analysis (override via VISION_MODEL env var)
 # Falls back to API_MODEL if not set
